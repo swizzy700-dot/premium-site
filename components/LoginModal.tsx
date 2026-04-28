@@ -76,7 +76,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         <div className="mt-6 text-center">
           <p className="text-sm text-neutral-600 font-light">
             Don't have an account?{' '}
-            <a href="mailto:hello@mainlinerandy.com?subject=New Client Account" className="text-amber-600 hover:text-amber-700 font-medium">
+            <a href="mailto:mainlinerandyptyltd@gmail.com?subject=New Client Account" className="text-amber-600 hover:text-amber-700 font-medium">
               Contact us
             </a>
           </p>

@@ -133,7 +133,7 @@ export default async function ServicePage({ params }: { params: Promise<{ slug?:
 
             <div className="space-y-4">
               <a
-                href={`mailto:hello@mainlinerandy.com?subject=Quote Request for ${service?.title || 'Website Service'}`}
+                href={`mailto:mainlinerandyptyltd@gmail.com?subject=Quote Request for ${service?.title || 'Website Service'}`}
                 className="inline-flex items-center justify-center w-full rounded-full bg-amber-500 px-8 py-4 text-sm text-neutral-950 font-light uppercase tracking-[0.25em] transition-all duration-300 hover:bg-amber-400"
               >
                 Get a Quote

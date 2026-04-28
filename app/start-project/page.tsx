@@ -1,6 +1,21 @@
+'use client';
+
 import Link from 'next/link';
+import { useState } from 'react';
 
 export default function StartProject() {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [project, setProject] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const subject = 'Project Request Submission';
+    const body = `Name: ${name}\nEmail: ${email}\nPhone: ${phone}\n\nProject Details:\n${project}`;
+    const mailtoLink = `mailto:mainlinerandyptyltd@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailtoLink;
+  };
   return (
     <div className="min-h-screen bg-white">
       <section className="relative bg-neutral-950 text-white pt-32 pb-20">
@@ -18,7 +33,7 @@ export default function StartProject() {
               Start Your Project
             </h1>
             <p className="text-xl text-neutral-300 font-light leading-relaxed">
-              Ready to elevate your digital presence? Let's discuss your vision and create something extraordinary together.
+              Ready to elevate your digital presence? Let&apos;s discuss your vision and create something extraordinary together.
             </p>
           </div>
         </div>
@@ -27,7 +42,7 @@ export default function StartProject() {
       <section className="py-20 sm:py-32">
         <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mx-auto">
-            <form className="space-y-8">
+            <form onSubmit={handleSubmit} className="space-y-8">
               <div className="grid gap-6 md:grid-cols-2">
                 <div>
                   <label htmlFor="name" className="block text-sm font-light text-neutral-700 mb-2">
@@ -37,6 +52,8 @@ export default function StartProject() {
                     type="text"
                     id="name"
                     name="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                     className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                     required
                   />
@@ -49,6 +66,8 @@ export default function StartProject() {
                     type="email"
                     id="email"
                     name="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                     required
                   />
@@ -63,6 +82,8 @@ export default function StartProject() {
                   type="tel"
                   id="phone"
                   name="phone"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
                   className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 />
               </div>
@@ -75,6 +96,8 @@ export default function StartProject() {
                   id="project"
                   name="project"
                   rows={6}
+                  value={project}
+                  onChange={(e) => setProject(e.target.value)}
                   className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                   placeholder="Tell us about your project, goals, and timeline..."
                   required

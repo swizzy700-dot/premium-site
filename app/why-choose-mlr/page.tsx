@@ -18,7 +18,7 @@ export default function WhyChooseMLR() {
               Why Choose MLR
             </h1>
             <p className="text-xl text-neutral-300 font-light leading-relaxed">
-              Discover what sets Mainline Randy apart in delivering premium digital solutions.
+              Experience the difference in how Mainline Randy builds digital systems - designed with precision, driven by strategy, and refined for lasting impact.
             </p>
           </div>
         </div>
@@ -30,18 +30,18 @@ export default function WhyChooseMLR() {
             <div className="grid gap-12 lg:grid-cols-2">
               <div>
                 <h2 className="text-3xl sm:text-4xl font-serif font-light text-neutral-950 leading-tight mb-6">
-                  Performance-Driven Excellence
+                   Refined Design & Brand Presence
                 </h2>
                 <p className="text-lg text-neutral-600 font-light leading-relaxed">
-                  We don't just build websites—we engineer high-performance digital experiences that drive results. Every project is optimized for speed, scalability, and conversion.
+                  MLR creates visually striking digital experiences that communicate clarity, confidence, and professionalism at first glance. Every interface is carefully crafted to reflect a premium brand identity, ensuring your business is presented with authority and lasting visual impact.
                 </p>
               </div>
               <div>
                 <h2 className="text-3xl sm:text-4xl font-serif font-light text-neutral-950 leading-tight mb-6">
-                  Premium Design Philosophy
+                  Strategic Business Approach
                 </h2>
                 <p className="text-lg text-neutral-600 font-light leading-relaxed">
-                  Our design approach combines luxury aesthetics with functional excellence. We create digital experiences that reflect your brand's premium positioning and values.
+                  Every build is guided by intent, not decoration. We design with purpose - aligning structure, messaging, and user flow to attract the right audience, increase engagement, and support real business outcomes. Your website becomes a tool for positioning, not just presentation.
                 </p>
               </div>
             </div>
@@ -49,18 +49,18 @@ export default function WhyChooseMLR() {
             <div className="grid gap-12 lg:grid-cols-2">
               <div>
                 <h2 className="text-3xl sm:text-4xl font-serif font-light text-neutral-950 leading-tight mb-6">
-                  Strategic Partnership
+                  Performance & Technical Excellence
                 </h2>
                 <p className="text-lg text-neutral-600 font-light leading-relaxed">
-                  We become your digital strategy partner, not just a service provider. Our team works closely with you to understand your goals and deliver solutions that drive measurable impact.
+                  Beyond appearance, every system is engineered for speed, responsiveness, and reliability. We focus on smooth user experience, clean architecture, security standards, and full optimisation to ensure your platform performs consistently across all devices and conditions.
                 </p>
               </div>
               <div>
                 <h2 className="text-3xl sm:text-4xl font-serif font-light text-neutral-950 leading-tight mb-6">
-                  Technical Mastery
+                  Tailored Growth & End-to-End Execution
                 </h2>
                 <p className="text-lg text-neutral-600 font-light leading-relaxed">
-                  Leveraging cutting-edge technologies and best practices, we build robust, secure, and future-proof digital platforms that grow with your business.
+                  Each solution is custom-built around your brand goals, not a template or preset structure. From concept to launch and beyond, we deliver a complete, guided process designed to support scalability, long-term growth, and continuous improvement as your business evolves.
                 </p>
               </div>
             </div>

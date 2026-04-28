@@ -45,10 +45,10 @@ export default function Navbar() {
 
           <div className="hidden md:flex items-center gap-8">
             <a
-              href="tel:+1234567890"
+              href="tel:+27659890691"
               className="text-sm text-neutral-400 font-light tracking-[0.2em] transition-colors duration-300 hover:text-white"
             >
-              +1 234 567 890
+              +27 65 989 0691
             </a>
             <button
               onClick={() => setLoginModalOpen(true)}

@@ -11,7 +11,7 @@ export default function Contact() {
     e.preventDefault();
     const subject = 'Contact Form Submission';
     const body = `Name: ${name}\nEmail: ${email}\n\nMessage:\n${message}`;
-    const mailtoLink = `mailto:hello@mainlinerandy.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const mailtoLink = `mailto:mainlinerandyptyltd@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = mailtoLink;
   };
 
@@ -86,10 +86,10 @@ export default function Contact() {
             <p className="text-sm text-neutral-500 font-light">
               Or email us directly at{' '}
               <a
-                href="mailto:hello@mainlinerandy.com"
+                href="mailto:mainlinerandyptyltd@gmail.com"
                 className="text-amber-600 hover:text-amber-700 transition-colors"
               >
-                hello@mainlinerandy.com
+                mainlinerandyptyltd@gmail.com
               </a>
             </p>
           </div>
