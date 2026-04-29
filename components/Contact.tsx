@@ -23,7 +23,7 @@ export default function Contact() {
             Get In Touch
           </h2>
           <p className="text-lg text-neutral-600 font-light leading-relaxed">
-            Ready to discuss your project? Send us a message and let's create something exceptional together.
+            Ready to discuss your project? Send us a message and let&apos;s create something exceptional together.
           </p>
         </div>
 

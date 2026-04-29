@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import LoginModal from './LoginModal';
 import GetStartedModal from './GetStartedModal';
 
@@ -33,10 +34,13 @@ export default function Navbar() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           <a href="#home" className="flex items-center gap-4">
-            <img
+            <Image
               src="/logo.webp"
               alt="Mainline Randy Logo"
+              width={64}
+              height={48}
               className="relative h-12 w-16 object-contain"
+              priority
             />
             <span className="text-xs uppercase tracking-[0.45em] text-neutral-300 font-light">
               Mainline Randy

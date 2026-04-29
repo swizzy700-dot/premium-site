@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import Marquee from './Marquee';
 
 export default function Hero() {
@@ -25,12 +26,12 @@ export default function Hero() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-6">
-                <a
-                  href="#check"
+                <Link
+                  href="/website-checker?start=1"
                   className="inline-flex items-center justify-center rounded-full bg-amber-500 px-10 py-5 text-base text-neutral-950 font-light tracking-[0.25em] uppercase transition-all duration-300 hover:bg-amber-400 hover:scale-105"
                 >
-                  Check Your Website Performance
-                </a>
+                  Check Your Website
+                </Link>
               </div>
             </div>
 

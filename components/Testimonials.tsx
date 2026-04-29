@@ -1,5 +1,7 @@
 'use client';
 
+import Image from "next/image";
+
 interface Testimonial {
   id: string;
   name: string;
@@ -109,13 +111,16 @@ export default function Testimonials() {
               <div className="relative space-y-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-4 flex-1">
-                    {testimonial.image && (
-                      <img
+                    {testimonial.image ? (
+                      <Image
                         src={testimonial.image}
                         alt={testimonial.name}
+                        width={56}
+                        height={56}
                         className="h-14 w-14 rounded-full object-cover flex-shrink-0"
+                        unoptimized
                       />
-                    )}
+                    ) : null}
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-base font-light text-neutral-950">{testimonial.name}</p>

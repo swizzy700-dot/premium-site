@@ -2,25 +2,6 @@
 
 import Link from 'next/link';
 
-const whyChooseItems = [
-  {
-    title: 'Performance Excellence',
-    description: 'Every solution is engineered for speed, reliability, and measurable results. We don\'t compromise on quality or performance.',
-  },
-  {
-    title: 'Strategic Design',
-    description: 'Our approach combines aesthetic refinement with strategic thinking. Every pixel serves a purpose in your brand narrative.',
-  },
-  {
-    title: 'Premium Support',
-    description: 'Dedicated, responsive service that goes beyond delivery. We\'re invested in your long-term success and growth.',
-  },
-  {
-    title: 'Proven Results',
-    description: 'Our clients consistently report elevated digital presence, improved conversions, and stronger brand positioning.',
-  },
-];
-
 const navigationCards = [
   {
     title: 'Terms & Conditions',

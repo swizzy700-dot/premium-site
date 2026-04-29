@@ -10,7 +10,7 @@ export default function CallToAction() {
               Start Your Project with Confidence
             </h2>
             <p className="text-lg text-neutral-300 font-light leading-relaxed max-w-2xl mx-auto">
-              Ready to elevate your online presence? Let's collaborate to create a website that drives results and reflects your brand's excellence.
+              Ready to elevate your online presence? Let&apos;s collaborate to create a website that drives results and reflects your brand&apos;s excellence.
             </p>
           </div>
           <div className="pt-4">

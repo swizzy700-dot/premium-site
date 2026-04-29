@@ -1,12 +1,14 @@
+import Link from "next/link";
+
 export default function TermsPage() {
   return (
     <div className="min-h-screen bg-white">
       <section className="relative bg-neutral-950 text-white pt-28 pb-20">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-10 flex items-center gap-4 text-sm uppercase tracking-[0.35em] text-neutral-400">
-            <a href="/" className="text-neutral-300 hover:text-white transition-colors duration-300">
+            <Link href="/" className="text-neutral-300 hover:text-white transition-colors duration-300">
               Home
-            </a>
+            </Link>
             <span className="text-neutral-600">/</span>
             <span className="text-white">Terms & Conditions</span>
           </div>
@@ -32,7 +34,7 @@ export default function TermsPage() {
               <div>
                 <h2 className="text-3xl font-serif font-light text-neutral-950 mb-6">1. Introduction</h2>
                 <p className="text-lg leading-relaxed font-light">
-                  These Terms and Conditions ("Terms") govern the relationship between Mainline Randy (MLR) and our clients. By engaging our services, you agree to be bound by these professional standards and conditions.
+                  These Terms and Conditions (&quot;Terms&quot;) govern the relationship between Mainline Randy (MLR) and our clients. By engaging our services, you agree to be bound by these professional standards and conditions.
                 </p>
               </div>
 

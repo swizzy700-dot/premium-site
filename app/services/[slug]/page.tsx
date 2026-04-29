@@ -1,6 +1,5 @@
 import { getServiceBySlug, getAllServiceSlugs } from '@/lib/services';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 
 export async function generateStaticParams() {
   const slugs = getAllServiceSlugs();
