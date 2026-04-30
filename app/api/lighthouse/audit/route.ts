@@ -105,111 +105,157 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    // Call Google PageSpeed API directly - NO WRAPPING
+    // Helper to build PageSpeed API URL
+    const buildApiUrl = (strategy: 'mobile' | 'desktop') => {
+      const apiUrl = new URL(PAGESPEED_API_URL);
+      apiUrl.searchParams.append("key", apiKey);
+      apiUrl.searchParams.append("url", url);
+      apiUrl.searchParams.append("strategy", strategy);
+      // Request ALL 4 Lighthouse categories
+      apiUrl.searchParams.append("category", "performance");
+      apiUrl.searchParams.append("category", "accessibility");
+      apiUrl.searchParams.append("category", "best-practices");
+      apiUrl.searchParams.append("category", "seo");
+      return apiUrl.toString();
+    };
+
+    // Helper to extract scores from PageSpeed response
+    const extractScores = (lighthouse: any) => {
+      const scores = lighthouse?.categories || {};
+      return {
+        performance: Math.round((scores.performance?.score || 0) * 100),
+        seo: Math.round((scores.seo?.score || 0) * 100),
+        accessibility: Math.round((scores.accessibility?.score || 0) * 100),
+        bestPractices: Math.round((scores["best-practices"]?.score || 0) * 100),
+      };
+    };
+
     console.log("[AuditAPI] Calling Google PageSpeed API for:", url);
 
-    const apiUrl = new URL(PAGESPEED_API_URL);
-    apiUrl.searchParams.append("key", apiKey);
-    apiUrl.searchParams.append("url", url);
-    apiUrl.searchParams.append("strategy", "mobile");
-    // Request ALL 4 Lighthouse categories
-    apiUrl.searchParams.append("category", "performance");
-    apiUrl.searchParams.append("category", "accessibility");
-    apiUrl.searchParams.append("category", "best-practices");
-    apiUrl.searchParams.append("category", "seo");
+    // Call BOTH mobile and desktop strategies
+    const mobileUrl = buildApiUrl('mobile');
+    const desktopUrl = buildApiUrl('desktop');
 
-    console.log("[AuditAPI] Request URL (without key):", apiUrl.toString().replace(apiKey, "REDACTED"));
+    console.log("[AuditAPI] Mobile request URL (without key):", mobileUrl.replace(apiKey, "REDACTED"));
+    console.log("[AuditAPI] Desktop request URL (without key):", desktopUrl.replace(apiKey, "REDACTED"));
 
-    const response = await fetch(apiUrl.toString());
-
-    console.log("[AuditAPI] Google API response status:", response.status, response.statusText);
-
-    if (!response.ok) {
-      let errorBody: string;
+    // Run both requests in parallel with timeout
+    const fetchWithTimeout = async (fetchUrl: string, strategy: string) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout per request
+      
       try {
-        const errorData = await response.json();
-        errorBody = JSON.stringify(errorData);
-      } catch {
-        errorBody = await response.text();
+        const response = await fetch(fetchUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        console.log(`[AuditAPI] ${strategy} API response status:`, response.status, response.statusText);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[AuditAPI] ${strategy} request failed:`, response.status, errorText.slice(0, 500));
+          return { success: false, error: `${strategy} audit failed: ${response.status}`, data: null };
+        }
+        
+        const data = await response.json();
+        const lighthouse = data.lighthouseResult;
+        
+        if (!lighthouse) {
+          console.error(`[AuditAPI] ${strategy} response missing lighthouseResult`);
+          return { success: false, error: `${strategy} audit missing data`, data: null };
+        }
+        
+        console.log(`[AuditAPI] ${strategy} response has lighthouseResult:`, true);
+        console.log(`[AuditAPI] ${strategy} categories:`, Object.keys(lighthouse.categories || {}));
+        
+        return { success: true, data: { lighthouse, scores: extractScores(lighthouse) } };
+      } catch (err) {
+        clearTimeout(timeoutId);
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        console.error(`[AuditAPI] ${strategy} request error:`, errorMessage);
+        return { success: false, error: `${strategy} audit error: ${errorMessage}`, data: null };
       }
-
-      console.error("🔥 REAL AUDIT ERROR - Google API rejected request:", {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorBody
-      });
-
-      return NextResponse.json({
-        success: false,
-        source: null,
-        desktop: null,
-        mobile: null,
-        error: `Google PageSpeed API error: ${response.status} ${response.statusText}`,
-        errorType: "scan_error",
-        scannedAt: new Date().toISOString(),
-        debug: {
-          googleError: errorBody,
-          envKeyExists: true,
-          envKeySample: apiKey.slice(0, 10),
-          requestUrl: url,
-          timestamp: new Date().toISOString()
-        }
-      }, { status: 502 });
-    }
-
-    const data = await response.json();
-
-    console.log("[AuditAPI] Google API response received, has lighthouseResult:", !!data.lighthouseResult);
-    console.log("[AuditAPI] Categories in response:", Object.keys(data.lighthouseResult?.categories || {}));
-
-    // Transform to our format
-    const lighthouse = data.lighthouseResult;
-    if (!lighthouse) {
-      return NextResponse.json({
-        success: false,
-        source: null,
-        desktop: null,
-        mobile: null,
-        error: "Google API response missing lighthouseResult",
-        errorType: "scan_error",
-        scannedAt: new Date().toISOString(),
-        debug: {
-          responseKeys: Object.keys(data),
-          timestamp: new Date().toISOString()
-        }
-      }, { status: 502 });
-    }
-
-    const scores = lighthouse.categories || {};
-
-    // Extract ALL 4 Lighthouse categories (0-100 scale)
-    const deviceData = {
-      performance: Math.round((scores.performance?.score || 0) * 100),
-      accessibility: Math.round((scores.accessibility?.score || 0) * 100),
-      bestPractices: Math.round((scores["best-practices"]?.score || 0) * 100),
-      seo: Math.round((scores.seo?.score || 0) * 100),
-      lhr: lighthouse
     };
+
+    // Execute both requests
+    const [mobileResult, desktopResult] = await Promise.all([
+      fetchWithTimeout(mobileUrl, 'mobile'),
+      fetchWithTimeout(desktopUrl, 'desktop')
+    ]);
+
+    // Check if at least one succeeded
+    const hasMobile = mobileResult.success && mobileResult.data;
+    const hasDesktop = desktopResult.success && desktopResult.data;
+
+    if (!hasMobile && !hasDesktop) {
+      console.error("[AuditAPI] Both mobile and desktop audits failed");
+      return NextResponse.json({
+        success: false,
+        source: null,
+        desktop: null,
+        mobile: null,
+        error: "Both mobile and desktop audits failed. Please try again.",
+        errorType: "scan_error",
+        scannedAt: new Date().toISOString(),
+        debug: {
+          mobileError: mobileResult.error,
+          desktopError: desktopResult.error,
+          timestamp: new Date().toISOString()
+        }
+      }, { status: 502 });
+    }
+
+    // Build device data with fallbacks
+    const mobileData = hasMobile ? {
+      performance: mobileResult.data!.scores.performance,
+      seo: mobileResult.data!.scores.seo,
+      accessibility: mobileResult.data!.scores.accessibility,
+      bestPractices: mobileResult.data!.scores.bestPractices,
+      lhr: mobileResult.data!.lighthouse
+    } : null;
+
+    const desktopData = hasDesktop ? {
+      performance: desktopResult.data!.scores.performance,
+      seo: desktopResult.data!.scores.seo,
+      accessibility: desktopResult.data!.scores.accessibility,
+      bestPractices: desktopResult.data!.scores.bestPractices,
+      lhr: desktopResult.data!.lighthouse
+    } : null;
+
+    // Use mobile as primary source for URL display
+    const primaryLighthouse = mobileResult.data?.lighthouse || desktopResult.data?.lighthouse;
     
-    console.log("[AuditAPI] Extracted scores:", {
-      performance: deviceData.performance,
-      accessibility: deviceData.accessibility,
-      bestPractices: deviceData.bestPractices,
-      seo: deviceData.seo
-    });
+    if (!primaryLighthouse) {
+      return NextResponse.json({
+        success: false,
+        source: null,
+        desktop: null,
+        mobile: null,
+        error: "Invalid PageSpeed API result structure",
+        errorType: "scan_error",
+        scannedAt: new Date().toISOString(),
+        debug: {
+          hasMobile,
+          hasDesktop,
+          timestamp: new Date().toISOString()
+        }
+      }, { status: 502 });
+    }
+
+    console.log("[AuditAPI] SUCCESS - returning mobile and desktop data");
 
     return NextResponse.json({
       success: true,
       source: "pagespeed_insights",
       url,
-      mobile: deviceData,
-      desktop: deviceData, // FIX: Don't return null, duplicate mobile for now
+      mobile: mobileData,
+      desktop: desktopData,
       error: null,
       errorType: null,
       scannedAt: new Date().toISOString()
     });
 
   } catch (error) {
+    console.error(" REAL AUDIT ERROR:", error);
     console.error("🔥 REAL AUDIT ERROR:", error);
 
     return NextResponse.json({

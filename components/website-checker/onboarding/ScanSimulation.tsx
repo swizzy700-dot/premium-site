@@ -171,6 +171,8 @@ export default function ScanSimulation(props: ScanSimulationProps) {
     
     // Track completion locally - don't use React state for flow control
     let flowState: 'running' | 'completed' | 'error' = 'running';
+    let progressInterval: NodeJS.Timeout | null = null;
+    let hardTimeout: NodeJS.Timeout | null = null;
 
     // Start the scan
     setScanState('running');
@@ -185,12 +187,42 @@ export default function ScanSimulation(props: ScanSimulationProps) {
         // NO automatic time-based abort - PageSpeed API can legitimately take 10-60s
         controllerRef.current = new AbortController();
         
-        // Soft timeout: Warn user after 30s that scan is taking longer than expected
-        // But do NOT abort - let the API complete naturally
+        // Progress simulation: gradually increase from 0 to 90% while waiting
+        // Real progress completes when API returns
+        let simulatedProgress = 0;
+        progressInterval = setInterval(() => {
+          if (flowState !== 'running') {
+            clearInterval(progressInterval!);
+            return;
+          }
+          // Slow progress: 0-90% over ~60 seconds
+          if (simulatedProgress < 90) {
+            simulatedProgress += Math.random() * 2;
+            setProgress(Math.min(simulatedProgress, 90));
+          }
+        }, 1000);
+        
+        // Soft timeout: Warn user after 30s
         warningTimeoutRef.current = setTimeout(() => {
           frontendLogger.warn(`[Scan ${scanId}] Taking longer than expected (>30s)`);
           setWarning("This scan is taking longer than usual... Google PageSpeed is still analyzing your site.");
         }, 30000);
+        
+        // HARD TIMEOUT: Force completion after 120 seconds (2 minutes)
+        // PageSpeed API should never take longer than this
+        hardTimeout = setTimeout(() => {
+          if (flowState === 'running') {
+            frontendLogger.error(`[Scan ${scanId}] HARD TIMEOUT - forcing error after 120s`);
+            controllerRef.current?.abort();
+            flowState = 'error';
+            setScanState('error');
+            setProgress(0);
+            setError('Scan timed out. Please try again.');
+            if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
+              callbacksRef.current.onError('Scan timed out after 120 seconds', scanId);
+            }
+          }
+        }, 120000);
         
         const res = await fetch("/api/lighthouse/audit", {
           method: "POST",
@@ -271,6 +303,13 @@ export default function ScanSimulation(props: ScanSimulationProps) {
           frontendLogger.warn(`[Scan ${scanId}] Invalid API response format`, data);
           isValid = false;
           errorMessage = "Invalid API response format.";
+        } else if (data.success === false) {
+          // API explicitly returned failure
+          frontendLogger.warn(`[Scan ${scanId}] API returned success: false`, data);
+          isValid = false;
+          errorMessage = data.error || data.errorType 
+            ? USER_ERROR_MESSAGES[data.errorType as keyof typeof USER_ERROR_MESSAGES] 
+            : "Unable to complete audit";
         } else if (data.errorType === "config_error") {
           // Config errors are expected when API key is missing - HARD FAILURE
           frontendLogger.expectedFailure("config_error", data.error || "API not configured");
@@ -437,7 +476,15 @@ export default function ScanSimulation(props: ScanSimulationProps) {
     })();
 
     return () => {
-      // Cleanup: Abort controller for in-flight requests, clear warning timeout
+      // Cleanup: Clear all timers and intervals
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+      if (hardTimeout) {
+        clearTimeout(hardTimeout);
+        hardTimeout = null;
+      }
       if (warningTimeoutRef.current) {
         clearTimeout(warningTimeoutRef.current);
         warningTimeoutRef.current = null;
