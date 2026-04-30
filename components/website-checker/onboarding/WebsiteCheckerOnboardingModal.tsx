@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ScanSimulation from "./ScanSimulation";
 import LighthouseResultsDashboard from "@/components/website-checker/dashboard/LighthouseResultsDashboard";
 import type { LighthouseClientAudit } from "@/lib/website-checker/lighthouse/types";
@@ -37,15 +37,190 @@ export default function WebsiteCheckerOnboardingModal(props: {
   const [url, setUrl] = useState<string>(initialUrl ?? "");
   const [scanError, setScanError] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState<string>("");
-  const [audit, setAudit] = useState<{ 
-    success: boolean; 
-    url: string; 
-    desktop: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object }; 
-    mobile: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object }; 
-  } | null>(null);
+  // Unified scan session state - single source of truth for scan lifecycle
+  const [scanSession, setScanSession] = useState<{
+    scanId: string | null;
+    status: 'idle' | 'running' | 'completed' | 'error';
+    audit: {
+      success: boolean; 
+      url: string; 
+      desktop: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object }; 
+      mobile: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object }; 
+    } | null;
+    error: string | null;
+  }>({
+    scanId: null,
+    status: 'idle',
+    audit: null,
+    error: null,
+  });
+  
+  // Legacy state for backward compatibility during transition
+  const [audit, setAudit] = useState<typeof scanSession.audit>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
 
   const canProceedUrl = useMemo(() => isValidUrl(url), [url]);
+  
+  // UNIFIED SCAN STATUS: Single source of truth for UI state
+  // Priority: scanning > completed > error > idle
+  const scanStatus = useMemo(() => {
+    if (isScanning) return "scanning";
+    if (audit) return "completed";
+    if (scanError) return "error";
+    return "idle";
+  }, [isScanning, audit, scanError]);
+
+  // Stable callbacks for ScanSimulation - MUST be at top level (not inside JSX!)
+  // CRITICAL: Includes scanId parameter for race condition protection
+  const handleScanComplete = useCallback((result: { success: boolean; url: string; desktop: object; mobile: object }, scanId: string) => {
+    console.log("[Onboarding] ONCOMPLETE CALLED", {
+      scanId,
+      hasResult: !!result,
+      resultUrl: result?.url,
+      hasDesktop: !!result?.desktop,
+      hasMobile: !!result?.mobile
+    });
+    
+    // RACE CONDITION GUARD: Validate scanId matches current scan session
+    setScanSession(prev => {
+      if (prev.scanId !== scanId) {
+        console.log("[Onboarding] IGNORING STALE SCAN RESULT", { 
+          incomingScanId: scanId, 
+          currentScanId: prev.scanId 
+        });
+        return prev; // Ignore stale response
+      }
+      
+      // Update unified state atomically
+      return {
+        ...prev,
+        status: 'completed',
+        audit: result as typeof prev.audit,
+        error: null,
+      };
+    });
+    
+    // Legacy state updates for backward compatibility
+    setAudit(result as typeof audit);
+    setScanError(null);
+    setIsScanning(false);
+    setStep(4);
+    
+    // Debug: Verify state was set (will show in next render)
+    console.log("[Onboarding] STATE UPDATES CALLED", {
+      scanId,
+    });
+  }, [setAudit, setScanError, setIsScanning, setStep, setScanSession]);
+
+  const handleScanError = useCallback((error: string, scanId?: string) => {
+    console.log("[Onboarding] onError called:", { error, scanId });
+    
+    // RACE CONDITION GUARD: Only update if scanId matches (or no scanId provided for backward compat)
+    if (scanId) {
+      setScanSession(prev => {
+        if (prev.scanId !== scanId) {
+          console.log("[Onboarding] IGNORING STALE SCAN ERROR", { 
+            incomingScanId: scanId, 
+            currentScanId: prev.scanId 
+        });
+          return prev;
+        }
+        return {
+          ...prev,
+          status: 'error',
+          error,
+        };
+      });
+    }
+    
+    setScanError(error);
+    setIsScanning(false);
+    setStep(4);
+  }, [setScanError, setIsScanning, setStep, setScanSession]);
+
+  const handleScanStart = useCallback((scanId: string) => {
+    console.log("[Onboarding] onScanStart called:", { scanId });
+    
+    // Store scanId and set scanning state
+    setScanSession(prev => ({
+      ...prev,
+      scanId,
+      status: 'running',
+      error: null,
+    }));
+    
+    // Legacy state updates
+    setIsScanning(true);
+    setScanError(null);
+    
+    console.log("[Onboarding] SCAN STARTED:", { scanId, isScanning: true });
+  }, [setScanSession, setIsScanning, setScanError]);
+
+  // Debug: Log state changes including scanSession
+  useEffect(() => {
+    console.log("[Onboarding] STATE CHANGE:", { 
+      step, 
+      scanSession: {
+        scanId: scanSession.scanId,
+        status: scanSession.status,
+        hasAudit: !!scanSession.audit,
+      },
+      legacy: {
+        isScanning, 
+        hasAudit: !!audit,
+        auditUrl: audit?.url,
+        hasScanError: !!scanError,
+      },
+      canProceedUrl, 
+      url 
+    });
+  }, [step, scanSession, isScanning, audit, scanError, canProceedUrl, url]);
+  
+  // FINAL STATE GUARANTEE: A scan MUST ALWAYS end in either success OR error
+  // This useEffect detects the illegal "empty state" and forces an error
+  // CRITICAL: Add small delay to allow state updates to propagate first
+  useEffect(() => {
+    // Only check when scan appears to be complete (not scanning)
+    if (!isScanning && step === 4) {
+      const hasAudit = !!audit;
+      const hasScanError = !!scanError;
+      
+      // Illegal state: neither success nor error
+      if (!hasAudit && !hasScanError) {
+        console.warn("[Onboarding] POTENTIAL INVALID STATE - waiting for state propagation...", {
+          isScanning,
+          hasAudit,
+          hasScanError,
+          step
+        });
+        
+        // Give state 500ms to propagate before forcing error
+        const timeoutId = setTimeout(() => {
+          // Re-check after delay - state might have updated
+          const stillNoAudit = !audit;
+          const stillNoError = !scanError;
+          
+          if (stillNoAudit && stillNoError) {
+            console.error("[Onboarding] INVALID STATE CONFIRMED → forcing error", {
+              audit: !!audit,
+              scanError: !!scanError,
+              step
+            });
+            
+            // Force error state
+            setScanError("Scan failed to return results. Please try again.");
+            setScanSession(prev => ({
+              ...prev,
+              status: 'error',
+              error: "Scan failed to return results. Please try again."
+            }));
+          }
+        }, 500);
+        
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [isScanning, audit, scanError, step, scanSession.status, setScanError, setScanSession]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -78,7 +253,8 @@ export default function WebsiteCheckerOnboardingModal(props: {
 
   function persistAudit(result: { 
     success: boolean; 
-    source?: "pagespeed_insights" | "config_error" | "error";
+    source?: "pagespeed_insights" | "config_error" | "error" | null;
+    errorType?: "config_error" | "scan_error" | "validation_error" | "unknown" | null;
     url: string; 
     desktop: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object } | null; 
     mobile: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object } | null; 
@@ -94,7 +270,8 @@ export default function WebsiteCheckerOnboardingModal(props: {
       }
       
       // CRITICAL: Verify data came from real Google PageSpeed API
-      if (result.source === "config_error") {
+      // Check errorType for config errors (source is only "pagespeed_insights" | null)
+      if (result.errorType === "config_error") {
         frontendLogger.expectedFailure('config_error', 'API not configured');
         setScanError('API not configured. Please contact support.');
         setIsScanning(false);
@@ -102,11 +279,13 @@ export default function WebsiteCheckerOnboardingModal(props: {
         return;
       }
       
-      if (result.source !== "pagespeed_insights") {
+      // Accept data if it has valid scores, regardless of exact source string
+      if (!result.source && (result.desktop || result.mobile)) {
+        // Allow through if we have actual data even if source is null
+        frontendLogger.info('Accepting audit data with null source but valid scores');
+      } else if (!result.source) {
         frontendLogger.warn('Unverified data source rejected', { source: result.source });
-        setScanError(result.source === "error" 
-          ? 'PageSpeed API error. Please try again.' 
-          : 'Unverified audit data - results must come from Google PageSpeed Insights.');
+        setScanError('Unverified audit data - results must come from Google PageSpeed Insights.');
         setIsScanning(false);
         setStep(4);
         return;
@@ -162,23 +341,31 @@ export default function WebsiteCheckerOnboardingModal(props: {
                 <div className="text-xs uppercase tracking-[0.35em] text-neutral-500">
                   Website analysis + lead conversion
                 </div>
-                <h1 className="mt-2 text-2xl sm:text-3xl font-light text-neutral-950">
+                <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-950">
                   {step === 1
                     ? "Website Analysis"
                     : step === 2
                       ? "Enter your details"
                       : step === 3
                         ? "Analyzing…"
-                        : "Website Analysis Results"}
+                        : scanStatus === "completed"
+                          ? "Your website report is ready"
+                          : scanStatus === "error"
+                            ? "Analysis failed"
+                            : "Website Analysis"}
                 </h1>
                 <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
                   {step === 1
-                    ? "Get a comprehensive analysis of your website."
+                    ? "Enter your website URL to get a comprehensive performance and SEO analysis."
                     : step === 2
-                      ? "We'll generate performance, SEO, accessibility, and best practices insights."
+                      ? "We'll scan your website and show you how to improve performance, SEO, accessibility, and best practices."
                       : step === 3
-                        ? "We're running Lighthouse and translating results into actionable recommendations."
-                        : "Analysis results with clear next steps—so you know exactly what to do next."}
+                        ? "Running comprehensive website audit across all metrics…"
+                        : scanStatus === "completed"
+                          ? "Your comprehensive website analysis is complete."
+                          : scanStatus === "error"
+                            ? "We couldn't complete the analysis. Please try again."
+                            : "Preparing your analysis…"}
                 </p>
               </div>
 
@@ -334,21 +521,32 @@ export default function WebsiteCheckerOnboardingModal(props: {
                     <ScanSimulation
                       url={normalizeUrl(url)}
                       businessName={businessName.trim() || undefined}
-                      onComplete={(result) => {
-                        persistAudit(result);
-                        setScanError(null);
-                        setIsScanning(false);
-                        setStep(4);
-                      }}
-                      onError={(error) => {
-                        setScanError(error);
-                        setIsScanning(false);
-                        setStep(4);
-                      }}
+                      onScanStart={handleScanStart}
+                      onComplete={handleScanComplete}
+                      onError={handleScanError}
                     />
                   </div>
                 ) : null}
 
+                {/* DEBUG: Log render decision */}
+                {(() => {
+                  const shouldShowReport = step === 4 && !!audit;
+                  const shouldShowError = step === 4 && !!scanError && !audit;
+                  const shouldShowMissing = step === 4 && !audit && !scanError;
+                  
+                  console.log("[Onboarding] RENDER DECISION:", {
+                    step,
+                    hasAudit: !!audit,
+                    auditUrl: audit?.url,
+                    hasScanError: !!scanError,
+                    isScanning,
+                    shouldShowReport,
+                    shouldShowError,
+                    shouldShowMissing
+                  });
+                  return null;
+                })()}
+                
                 {step === 4 && audit ? (
                   <LighthouseResultsDashboard audit={audit} onAnalyzeAnother={handleAnalyzeAnother} />
                 ) : step === 4 && scanError ? (
@@ -360,7 +558,25 @@ export default function WebsiteCheckerOnboardingModal(props: {
                       type="button"
                       onClick={() => {
                         setScanError(null);
-                        setIsScanning(false);
+                        setAudit(null); // Reset audit on retry
+                        setStep(2);
+                      }}
+                      className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-6 py-3 text-sm font-medium text-neutral-950 hover:opacity-95 transition-opacity"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                ) : step === 4 ? (
+                  // SAFETY: If we reach step 4 without audit or error, show error and allow retry
+                  <div className="text-center py-8">
+                    <div className="text-red-600 mb-4">
+                      Report data is missing. Please try again.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAudit(null);
+                        setScanError(null);
                         setStep(2);
                       }}
                       className="inline-flex items-center justify-center rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-6 py-3 text-sm font-medium text-neutral-950 hover:opacity-95 transition-opacity"
@@ -370,7 +586,11 @@ export default function WebsiteCheckerOnboardingModal(props: {
                   </div>
                 ) : (
                   <div className="text-neutral-600">
-                    {isScanning ? "Analyzing website performance…" : "Preparing results…"}
+                    {scanStatus === "scanning"
+                      ? "Analyzing website performance…"
+                      : scanStatus === "error"
+                        ? "Analysis failed. Please try again."
+                        : "Preparing results…"}
                   </div>
                 )}
               </div>

@@ -45,7 +45,32 @@ export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
     }
 
     // Check API key configuration
-    const apiKey = process.env.PAGESPEED_API_KEY;
+    // Try multiple common env variable names (Vercel, Netlify, etc. use different conventions)
+    const possibleKeyNames = [
+      "PAGESPEED_API_KEY",
+      "NEXT_PUBLIC_PAGESPEED_API_KEY",  // Some platforms require this prefix
+      "pagespeed_api_key",
+      "GOOGLE_PAGESPEED_API_KEY",
+      "PAGESPEED_KEY",
+    ];
+    
+    let apiKey: string | undefined;
+    let foundKeyName: string | undefined;
+    
+    for (const keyName of possibleKeyNames) {
+      const value = process.env[keyName];
+      if (value && value.trim() && !value.includes("your_")) {
+        apiKey = value.trim();
+        foundKeyName = keyName;
+        break;
+      }
+    }
+    
+    // Production debugging: log what's available (safe - only logs presence, not value)
+    console.log(`[AuditEngine] Found API key in: ${foundKeyName || "NONE"}`);
+    console.log(`[AuditEngine] NODE_ENV: ${process.env.NODE_ENV}`);
+    console.log(`[AuditEngine] Checked env vars: ${possibleKeyNames.map(k => `${k}=${process.env[k] ? "✓" : "✗"}`).join(", ")}`);
+    
     if (!apiKey) {
       auditLogger.configMissing("AuditEngine");
       return createErrorResponse(
@@ -72,18 +97,23 @@ export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
       desktop = processPageSpeedData(desktopResult.value);
       if (desktop) hasValidData = true;
     } else if (desktopResult.status === "rejected") {
-      auditLogger.scanFailed("AuditEngine", url, desktopResult.reason);
+      const reason = desktopResult.reason;
+      console.error("[AuditEngine] Desktop scan FAILED:", reason instanceof Error ? reason.message : reason);
+      auditLogger.scanFailed("AuditEngine", url, reason);
     }
 
     if (mobileResult.status === "fulfilled" && mobileResult.value) {
       mobile = processPageSpeedData(mobileResult.value);
       if (mobile) hasValidData = true;
     } else if (mobileResult.status === "rejected") {
-      auditLogger.scanFailed("AuditEngine", url, mobileResult.reason);
+      const reason = mobileResult.reason;
+      console.error("[AuditEngine] Mobile scan FAILED:", reason instanceof Error ? reason.message : reason);
+      auditLogger.scanFailed("AuditEngine", url, reason);
     }
 
     // STRICT: Must have at least one valid result
     if (!hasValidData) {
+      console.error("[AuditEngine] NO VALID DATA from either desktop or mobile scan");
       return createErrorResponse(
         ERROR_MESSAGES.scan_error,
         "scan_error",
@@ -134,9 +164,11 @@ async function fetchPageSpeedData(
     try {
       const errorData = await response.json();
       errorBody = JSON.stringify(errorData);
+      console.error("[AuditEngine] Google API ERROR:", { status: response.status, error: errorBody, url, strategy });
       auditLogger.scanFailed("AuditEngine", url, { status: response.status, error: errorBody });
     } catch {
       errorBody = await response.text();
+      console.error("[AuditEngine] Google API ERROR (text):", { status: response.status, error: errorBody, url, strategy });
       auditLogger.scanFailed("AuditEngine", url, { status: response.status, error: errorBody });
     }
     throw new Error(`PageSpeed API error: ${response.status} ${response.statusText} - ${errorBody}`);

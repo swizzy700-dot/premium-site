@@ -46,26 +46,45 @@ function clamp(value: number, min: number, max: number) {
 interface ScanSimulationProps {
   url: string;
   businessName?: string;
+  scanId?: string; // Optional: parent can provide scanId for tracking
   onComplete: (result: { 
     success: boolean; 
     url: string; 
     desktop: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object }; 
     mobile: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object }; 
-  }) => void;
-  onError?: (error: string) => void;
+  }, scanId: string) => void; // scanId passed back for race condition validation
+  onError?: (error: string, scanId: string) => void; // scanId passed back for race condition validation
+  onScanStart?: (scanId: string) => void; // Called when scan starts with generated scanId
 }
 
 export default function ScanSimulation(props: ScanSimulationProps) {
   const { url, businessName, onComplete, onError } = props;
 
   // Use refs for callbacks to prevent infinite loops from parent re-renders
-  const callbacksRef = useRef({ onComplete, onError });
-  callbacksRef.current = { onComplete, onError };
+  const { onScanStart } = props;
+  const callbacksRef = useRef({ onComplete, onError, onScanStart });
+  callbacksRef.current = { onComplete, onError, onScanStart };
+
+  // Track if scan completed (survives re-renders, used for guard logic)
+  const hasCompletedRef = useRef(false);
+  
+  // Track current scan ID to prevent race conditions from late responses
+  const activeScanIdRef = useRef<string | null>(null);
+  
+  // Refs for cleanup access to abort controller and timeout
+  const controllerRef = useRef<AbortController | null>(null);
+  const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Single source of truth for scan state
   const [scanState, setScanState] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null); // Soft timeout warning for slow scans
+
+  // Reset completion flag when URL changes
+  useEffect(() => {
+    hasCompletedRef.current = false;
+  }, [url]);
 
   // Phase index based on scan state, not progress
   const phaseIndex = useMemo(() => {
@@ -108,23 +127,50 @@ export default function ScanSimulation(props: ScanSimulationProps) {
   useEffect(() => {
     // Auto-start scan when component mounts or URL changes
     // Only run if we're idle and have a valid URL
-    // NOTE: scanOnceGuard prevents duplicate concurrent scans
     if (scanState !== 'idle' || !url) {
       return;
     }
 
-    // Guard against multiple concurrent scans
-    const scanKey = `${url}-${Date.now()}`;
-    if ((window as unknown as Record<string, unknown>).__activeScan === scanKey) {
-      frontendLogger.debug(`Duplicate scan prevented for: ${url}`);
-      return;
+    // Guard against multiple concurrent scans for the SAME URL
+    // Use URL-only as key (no timestamp) so guard actually works
+    const scanLockKey = url;
+    const existingLock = (window as unknown as Record<string, { url: string; timestamp: number } | undefined>).__activeScan;
+    
+    if (existingLock?.url === url) {
+      const age = Date.now() - existingLock.timestamp;
+      if (age < 60000) { // 60 second lock timeout
+        frontendLogger.warn(`Scan already in progress for: ${url} (age: ${age}ms)`);
+        return;
+      }
+      frontendLogger.debug(`Clearing stale scan lock for: ${url} (age: ${age}ms)`);
     }
-    (window as unknown as Record<string, unknown>).__activeScan = scanKey;
+
+    // Set new scan lock
+    (window as unknown as Record<string, { url: string; timestamp: number }>).__activeScan = {
+      url,
+      timestamp: Date.now()
+    };
 
     frontendLogger.info(`Starting scan for URL: ${url}`);
 
-    let cancelled = false;
-    let currentScanState: 'idle' | 'running' | 'completed' | 'error' = 'running';
+    // Generate unique scan ID for this scan instance
+    // Use crypto.randomUUID() if available, fallback to timestamp-based ID
+    const scanId = typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID() 
+      : `${url}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    activeScanIdRef.current = scanId; // Set as active scan for race protection
+    hasCompletedRef.current = false; // Reset completion flag for new scan
+    
+    frontendLogger.info(`[ScanSimulation] Starting scan ${scanId} for: ${url}`);
+    
+    // Notify parent of scan start with scanId
+    if (callbacksRef.current.onScanStart) {
+      callbacksRef.current.onScanStart(scanId);
+    }
+    
+    // Track completion locally - don't use React state for flow control
+    let flowState: 'running' | 'completed' | 'error' = 'running';
 
     // Start the scan
     setScanState('running');
@@ -133,88 +179,194 @@ export default function ScanSimulation(props: ScanSimulationProps) {
 
     (async () => {
       try {
-        frontendLogger.debug(`Making API call to /api/lighthouse/audit for: ${url}`);
+        frontendLogger.debug(`[Scan ${scanId}] Making API call to /api/lighthouse/audit`);
+        
+        // Create AbortController ONLY for user cancellation or component unmount
+        // NO automatic time-based abort - PageSpeed API can legitimately take 10-60s
+        controllerRef.current = new AbortController();
+        
+        // Soft timeout: Warn user after 30s that scan is taking longer than expected
+        // But do NOT abort - let the API complete naturally
+        warningTimeoutRef.current = setTimeout(() => {
+          frontendLogger.warn(`[Scan ${scanId}] Taking longer than expected (>30s)`);
+          setWarning("This scan is taking longer than usual... Google PageSpeed is still analyzing your site.");
+        }, 30000);
+        
         const res = await fetch("/api/lighthouse/audit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url, businessName, deviceMode: "desktop" }),
+          signal: controllerRef.current.signal, // Only aborted on user cancel or unmount
         });
+        
+        // Clear warning timeout once response arrives
+        if (warningTimeoutRef.current) {
+          clearTimeout(warningTimeoutRef.current);
+          warningTimeoutRef.current = null;
+        }
+        setWarning(null); // Clear any warning message
 
-        frontendLogger.debug(`API response status: ${res.status}`);
+        frontendLogger.debug(`[Scan ${scanId}] API response status: ${res.status}`);
 
+        // RACE CONDITION GUARD: Ignore response if this is not the active scan anymore
+        if (activeScanIdRef.current !== scanId) {
+          frontendLogger.debug(`[Scan ${scanId}] Ignoring stale response - newer scan active`);
+          return;
+        }
+
+        // SOFT FAILURE HANDLING: Parse error response without throwing
         if (!res.ok) {
-          const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-          frontendLogger.warn("API error response", payload);
-          throw new Error(payload?.error || "Lighthouse audit failed.");
+          const payload = (await res.json().catch(() => null)) as { error?: string; errorType?: string } | null;
+          frontendLogger.warn(`[Scan ${scanId}] API error response (status ${res.status})`, payload);
+          
+          // Classify error: config_error is hard failure, others are soft (might retry)
+          const isHardFailure = payload?.errorType === "config_error" || res.status === 401 || res.status === 403;
+          
+          if (isHardFailure) {
+            // Hard failure: API key missing, auth error - show error state
+            flowState = 'error';
+            hasCompletedRef.current = true;
+            const errorMessage = payload?.errorType === "config_error" 
+              ? USER_ERROR_MESSAGES.config_error 
+              : (payload?.error || "Authentication failed.");
+            setError(errorMessage);
+            setScanState('error');
+            // RACE CONDITION GUARD: Only call callback if this is still the active scan
+            if (activeScanIdRef.current === scanId) {
+              if (callbacksRef.current.onError) {
+                callbacksRef.current.onError(errorMessage, scanId);
+              }
+            }
+          } else {
+            // Soft failure: temporary 500, timeout, etc. - show error but allow retry
+            flowState = 'error';
+            hasCompletedRef.current = true;
+            const errorMessage = payload?.error || `Audit service temporarily unavailable (${res.status}). Please try again.`;
+            setError(errorMessage);
+            setScanState('error');
+            // RACE CONDITION GUARD: Only call callback if this is still the active scan
+            if (activeScanIdRef.current === scanId) {
+              if (callbacksRef.current.onError) {
+                callbacksRef.current.onError(errorMessage, scanId);
+              }
+            }
+          }
+          return; // Graceful exit - scan completed with error state
         }
 
         const data = (await res.json()) as AuditResponse;
-        frontendLogger.debug("API response data", data);
-        
-        if (cancelled || currentScanState !== 'running') return;
+        frontendLogger.debug(`[Scan ${scanId}] API response data`, { 
+          success: data.success, 
+          hasError: !!data.error,
+          hasDesktop: !!data.desktop,
+          hasMobile: !!data.mobile 
+        });
 
-        // Safe validation - don't throw errors, handle gracefully
+        // Safe validation with PARTIAL SUCCESS support
         let isValid = true;
         let errorMessage = '';
 
         // Validate API response structure
         if (!data || typeof data !== 'object') {
-          frontendLogger.warn("Invalid API response format", data);
+          frontendLogger.warn(`[Scan ${scanId}] Invalid API response format`, data);
           isValid = false;
           errorMessage = "Invalid API response format.";
-        } else if (!data.success || data.error) {
-          // Unified error handling based on errorType
-          // Expected failures are warnings, not errors
-          if (data.errorType && data.errorType !== "unknown") {
-            frontendLogger.expectedFailure(data.errorType, data.error || "Unknown error");
-          } else {
-            frontendLogger.warn("API reported failure", data.error);
-          }
+        } else if (data.errorType === "config_error") {
+          // Config errors are expected when API key is missing - HARD FAILURE
+          frontendLogger.expectedFailure("config_error", data.error || "API not configured");
+          isValid = false;
+          errorMessage = USER_ERROR_MESSAGES.config_error;
+        } else if (data.error) {
+          // API returned error field - SOFT FAILURE (might succeed on retry)
+          frontendLogger.warn(`[Scan ${scanId}] API reported failure`, data.error);
           isValid = false;
           errorMessage = data.errorType 
             ? USER_ERROR_MESSAGES[data.errorType] 
             : (data.error || "Unable to complete audit");
-        } else if (!data.desktop && !data.mobile) {
-          frontendLogger.warn("Missing data in response", { success: data.success, desktop: !!data.desktop, mobile: !!data.mobile });
-          isValid = false;
-          errorMessage = USER_ERROR_MESSAGES.scan_error;
-        } else if (data.source !== "pagespeed_insights") {
-          // Only accept real PageSpeed data
-          frontendLogger.warn("Invalid or unverified data source", { source: data.source });
-          isValid = false;
-          errorMessage = USER_ERROR_MESSAGES.scan_error;
         }
+        // NOTE: Partial success - accept if we have at least desktop OR mobile data
+        // This handles cases where Google API returns one device but not the other
 
         if (!isValid) {
-          frontendLogger.debug(`Validation failed for ${url}: ${errorMessage}`);
-          // Don't throw error - handle gracefully with state update
-          currentScanState = 'error';
+          frontendLogger.debug(`[Scan ${scanId}] Validation failed: ${errorMessage}`);
+          // CRITICAL: Always update state - never silent fail
+          flowState = 'error';
+          hasCompletedRef.current = true;
+          setWarning(null); // Clear any warning
           setScanState('error');
           setError(errorMessage);
-          // Use ref to call callback without dependency issues
-          if (callbacksRef.current.onError) {
-            callbacksRef.current.onError(errorMessage);
+          // RACE CONDITION GUARD: Only call callback if this is still the active scan
+          if (activeScanIdRef.current === scanId) {
+            if (callbacksRef.current.onError) {
+              callbacksRef.current.onError(errorMessage, scanId);
+            }
+          } else {
+            frontendLogger.debug(`[Scan ${scanId}] Skipping error callback - scan is no longer active`);
           }
           return;
         }
         
-        frontendLogger.info(`Scan completed successfully for: ${url}`);
-        currentScanState = 'completed';
+        // CRITICAL SUCCESS PATH: This MUST execute when API returns valid data
+        frontendLogger.info(`[Scan ${scanId}] Completed successfully for: ${url}`);
+        flowState = 'completed';
+        hasCompletedRef.current = true;
+        
+        // Clear any warning - scan completed successfully
+        setWarning(null);
+        
+        // CRITICAL: Update React state to 'completed' - this triggers UI change
         setScanState('completed');
         
-        // Transform new API response to legacy format for compatibility
-        // Use ref to call callback without dependency issues
+        // Transform API response to legacy format - handles BOTH new flat format AND old nested format
+        // New API: { mobile: { performance: 85, seo: 90, ... } }
+        // Old API: { mobile: { scores: { performance: { score: 0.85 }, ... } } }
         const { onComplete: completeCallback } = callbacksRef.current;
+        
+        const extractScores = (deviceData: unknown) => {
+          if (!deviceData || typeof deviceData !== 'object') {
+            return { performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {} };
+          }
+          const d = deviceData as Record<string, unknown>;
+          
+          // New flat format (API returns 0-100 numbers directly)
+          if (typeof d.performance === 'number') {
+            return {
+              performance: d.performance,
+              seo: (d.seo as number) || 0,
+              accessibility: (d.accessibility as number) || 0,
+              bestPractices: (d.bestPractices as number) || 0,
+              lhr: (d.lhr as object) || (d.rawLhr as object) || {}
+            };
+          }
+          
+          // Old nested format (scores.performance.score was 0-1)
+          const scores = d.scores as Record<string, { score?: number }> | undefined;
+          if (scores) {
+            return {
+              performance: Math.round((scores.performance?.score || 0) * 100),
+              seo: Math.round((scores.seo?.score || 0) * 100),
+              accessibility: Math.round((scores.accessibility?.score || 0) * 100),
+              bestPractices: Math.round((scores['best-practices']?.score || 0) * 100),
+              lhr: (d.rawLhr as object) || {}
+            };
+          }
+          
+          return { performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {} };
+        };
+        
+        const desktopScores = extractScores(data.desktop);
+        const mobileScores = extractScores(data.mobile);
+        
         const legacyData = {
           success: data.success,
-          source: data.source,  // ✅ Include source for validation
+          source: data.source || "pagespeed_insights",
           url: url,
           desktop: data.desktop ? {
-            performance: data.desktop.scores.performance.score,
-            seo: data.desktop.scores.seo.score,
-            accessibility: data.desktop.scores.accessibility.score,
-            bestPractices: data.desktop.scores['best-practices'].score,
-            lhr: (data.desktop.rawLhr as object) ?? {}
+            performance: desktopScores.performance,
+            seo: desktopScores.seo,
+            accessibility: desktopScores.accessibility,
+            bestPractices: desktopScores.bestPractices,
+            lhr: desktopScores.lhr
           } : {
             performance: 0,
             seo: 0,
@@ -223,11 +375,11 @@ export default function ScanSimulation(props: ScanSimulationProps) {
             lhr: {}
           },
           mobile: data.mobile ? {
-            performance: data.mobile.scores.performance.score,
-            seo: data.mobile.scores.seo.score,
-            accessibility: data.mobile.scores.accessibility.score,
-            bestPractices: data.mobile.scores['best-practices'].score,
-            lhr: (data.mobile.rawLhr as object) ?? {}
+            performance: mobileScores.performance,
+            seo: mobileScores.seo,
+            accessibility: mobileScores.accessibility,
+            bestPractices: mobileScores.bestPractices,
+            lhr: mobileScores.lhr
           } : {
             performance: 0,
             seo: 0,
@@ -237,31 +389,78 @@ export default function ScanSimulation(props: ScanSimulationProps) {
           }
         };
         
-        completeCallback(legacyData);
+        // RACE CONDITION GUARD: Only call callback if this is still the active scan
+        if (activeScanIdRef.current === scanId) {
+          frontendLogger.info(`[Scan ${scanId}] Calling onComplete callback`);
+          completeCallback(legacyData, scanId);
+        } else {
+          frontendLogger.debug(`[Scan ${scanId}] Skipping onComplete callback - scan is no longer active`);
+        }
       } catch (e) {
-        // Handle any unexpected errors gracefully
-        if (cancelled || currentScanState !== 'running') return;
+        // RACE CONDITION GUARD: Don't update state if this is not the active scan anymore
+        if (activeScanIdRef.current !== scanId) {
+          frontendLogger.debug(`[Scan ${scanId}] Ignoring stale error - newer scan active`);
+          return;
+        }
+        
+        // Check if this is an abort (user cancelled or component unmounted)
+        const isAbort = e instanceof Error && e.name === 'AbortError';
+        
+        if (isAbort) {
+          frontendLogger.info(`[Scan ${scanId}] Scan was cancelled by user or component unmount`);
+          // Don't update state - the new scan or unmount will handle it
+          return;
+        }
+        
+        // CRITICAL: Handle unexpected errors - always transition to error state, never get stuck
         const message = e instanceof Error ? e.message : "Failed to run Lighthouse audit.";
-        frontendLogger.error(`Unexpected error for ${url}`, e);
+        
+        frontendLogger.error(`[Scan ${scanId}] Unexpected error:`, e);
+        
+        // CRITICAL: Always update state - never leave in 'running'
+        flowState = 'error';
+        hasCompletedRef.current = true;
+        setWarning(null); // Clear any warning
         setError(message);
-        currentScanState = 'error';
         setScanState('error');
-        // Use ref to call callback without dependency issues
-        if (callbacksRef.current.onError) {
-          callbacksRef.current.onError(message);
+        
+        // RACE CONDITION GUARD: Only call callback if this is still the active scan
+        if (activeScanIdRef.current === scanId) {
+          // Use ref to call callback without dependency issues
+          if (callbacksRef.current.onError) {
+            callbacksRef.current.onError(message, scanId);
+          }
+        } else {
+          frontendLogger.debug(`[Scan ${scanId}] Skipping error callback - scan is no longer active`);
         }
       }
     })();
 
     return () => {
-      cancelled = true;
-      // Clear scan guard on cleanup
-      (window as unknown as Record<string, unknown>).__activeScan = undefined;
-      // Note: Do NOT reset state here - let component handle its own state
-      // Resetting state in cleanup can cause race conditions
+      // Cleanup: Abort controller for in-flight requests, clear warning timeout
+      if (warningTimeoutRef.current) {
+        clearTimeout(warningTimeoutRef.current);
+        warningTimeoutRef.current = null;
+      }
+      
+      // Abort any in-flight fetch (this triggers AbortError in catch block)
+      // Only if scan hasn't completed - completed scans don't need cleanup
+      if (flowState === 'running' && !hasCompletedRef.current && controllerRef.current) {
+        frontendLogger.debug(`[Scan ${scanId}] Cleanup - aborting in-flight request`);
+        controllerRef.current.abort(); // Triggers AbortError which is handled gracefully
+        
+        // Clear scan lock
+        const active = (window as unknown as Record<string, { url: string } | undefined>).__activeScan;
+        if (active?.url === url) {
+          (window as unknown as Record<string, unknown>).__activeScan = undefined;
+        }
+      }
+      
+      // Clear refs
+      controllerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, businessName]); // Only re-run when URL changes, NOT when callbacks change
+  }, [url]); // CRITICAL: Only re-run when URL changes - NOT businessName
 
   return (
     <div className="w-full">
@@ -278,7 +477,7 @@ export default function ScanSimulation(props: ScanSimulationProps) {
             {scanState === 'idle' && 'Click to start a comprehensive Lighthouse audit of your website.'}
             {scanState === 'running' && 'Running comprehensive Lighthouse analysis and collecting performance metrics...'}
             {scanState === 'completed' && 'Analysis complete! Preparing your detailed performance report.'}
-            {scanState === 'error' && error || 'An error occurred during the analysis. Please try again.'}
+            {scanState === 'error' && (error || 'An error occurred during the analysis. Please try again.')}
           </p>
         </div>
         <div className="flex items-center gap-3">
