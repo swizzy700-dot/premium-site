@@ -72,12 +72,12 @@ function DeviceSection({
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            Analyzing...
+            Processing...
           </span>
         )}
         {!isLoading && data && (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            Complete
+            Done
           </span>
         )}
       </div>
@@ -175,7 +175,7 @@ export default function ProgressiveAuditDashboard({
               {isComplete ? 'Website Analysis Complete' : 'Analysis in Progress'}
             </div>
             <h2 className="mt-2 text-3xl sm:text-4xl font-light text-neutral-950">
-              {isComplete ? 'Website Performance Report' : 'Analyzing Your Website'}
+              {isComplete ? 'Performance Report' : 'Analyzing Your Website'}
             </h2>
             <p className="mt-2 text-sm text-neutral-600">
               {audit.url}
@@ -202,7 +202,7 @@ export default function ProgressiveAuditDashboard({
                 ? 'Mobile analysis complete. Desktop analysis in progress...'
                 : !hasMobile && hasDesktop
                 ? 'Desktop analysis complete. Mobile analysis in progress...'
-                : 'Running comprehensive Lighthouse audit. This may take 30-60 seconds...'}
+                : 'Running comprehensive performance evaluation. This may take 30-60 seconds...'}
             </p>
           </div>
         )}

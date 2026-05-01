@@ -24,8 +24,8 @@ export default function WebsiteCheckerNav() {
                 </svg>
               </span>
               <span className="hidden sm:block">
-                <span className="block text-sm font-medium text-neutral-900">Website Checker</span>
-                <span className="block text-xs text-neutral-500">AI audit + lead conversion</span>
+                <span className="block text-sm font-medium text-neutral-900">Performance Platform</span>
+                <span className="block text-xs text-neutral-500">Insights that drive results</span>
               </span>
             </Link>
 
@@ -61,7 +61,7 @@ export default function WebsiteCheckerNav() {
                 onClick={() => window.dispatchEvent(new CustomEvent("ai-assistant:open", { detail: {} }))}
                 className="rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-3 py-1.5 text-xs font-medium text-neutral-950 hover:opacity-95 transition-opacity"
               >
-                AI Assistant Chat
+                Assistant
               </button>
             </nav>
           </div>

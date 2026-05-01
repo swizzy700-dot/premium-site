@@ -1,39 +1,32 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AuditResponse, AuditErrorType, ERROR_MESSAGES } from "@/lib/website-checker/types";
-import { frontendLogger } from "@/lib/logger";
+import type { AuditResponse } from "@/lib/website-checker/types";
 
-type ScanStep = { label: string; hint: string };
-
-type ScanState = "idle" | "scanning" | "success" | "unavailable";
+type ScanStep = { label: string; hint: string; stage: ScanStage };
+type ScanStage = 'connecting' | 'mobile' | 'desktop' | 'processing' | 'complete' | 'error';
 
 // User-facing error messages - NEVER expose technical details
-const USER_ERROR_MESSAGES: Record<AuditErrorType, string> = {
-  config_error: "Audit service temporarily unavailable",
-  scan_error: "Unable to complete scan for this URL",
-  validation_error: "Invalid URL or audit results",
+const USER_ERROR_MESSAGES: Record<string, string> = {
+  config_error: "Analysis service temporarily unavailable",
+  scan_error: "Unable to complete analysis for this URL",
+  validation_error: "Invalid URL or analysis results",
   unknown: "An unexpected error occurred",
 };
 
-const STEPS: ScanStep[] = [
-  {
-    label: "Scanning URL…",
-    hint: "Preparing the Lighthouse audit environment",
-  },
-  {
-    label: "Running Lighthouse audit…",
-    hint: "Collecting performance, SEO, accessibility, best practices signals",
-  },
-  {
-    label: "Analyzing performance…",
-    hint: "Extracting key web vitals and responsiveness insights",
-  },
-  {
-    label: "Analyzing SEO & usability…",
-    hint: "Summarizing discoverability, accessibility, and reliability",
-  },
+// Dynamic progressive stages for speed perception
+const PROGRESSIVE_STEPS: ScanStep[] = [
+  { label: "Connecting...", hint: "Establishing secure connection", stage: 'connecting' },
+  { label: "Analyzing mobile...", hint: "Evaluating mobile performance metrics", stage: 'mobile' },
+  { label: "Analyzing desktop...", hint: "Evaluating desktop performance metrics", stage: 'desktop' },
+  { label: "Compiling insights...", hint: "Building your performance report", stage: 'processing' },
 ];
+
+// History cache - stores multiple results per URL for history viewing
+// Key: URL, Value: array of cached results with timestamps
+const historyCache = new Map<string, { data: AuditResponse; timestamp: number; scanId: string }[]>();
+const MAX_HISTORY_PER_URL = 10; // Keep last 10 scans per URL
+const HISTORY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3);
@@ -43,10 +36,47 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+// Get latest history entry for a URL (for history viewing only)
+function getLatestHistory(url: string): { data: AuditResponse; timestamp: number; scanId: string } | null {
+  const history = historyCache.get(url);
+  if (!history || history.length === 0) return null;
+  
+  // Return most recent
+  const sorted = history.sort((a, b) => b.timestamp - a.timestamp);
+  return sorted[0];
+}
+
+// Get all history for a URL
+function getHistory(url: string): { data: AuditResponse; timestamp: number; scanId: string }[] {
+  const history = historyCache.get(url) || [];
+  return history
+    .filter(h => Date.now() - h.timestamp < HISTORY_TTL_MS)
+    .sort((a, b) => b.timestamp - a.timestamp);
+}
+
+// Add result to history (allows multiple scans per URL)
+function addToHistory(url: string, data: AuditResponse, scanId: string): void {
+  const existing = historyCache.get(url) || [];
+  const newEntry = { data, timestamp: Date.now(), scanId };
+  
+  // Add to front, keep only MAX_HISTORY_PER_URL entries
+  const updated = [newEntry, ...existing].slice(0, MAX_HISTORY_PER_URL);
+  historyCache.set(url, updated);
+  
+  // Also store in localStorage for persistence across sessions
+  try {
+    const allHistory = Array.from(historyCache.entries());
+    localStorage.setItem('lighthouse-history', JSON.stringify(allHistory));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 interface ScanSimulationProps {
   url: string;
   businessName?: string;
   scanId?: string; // Optional: parent can provide scanId for tracking
+  useCache?: boolean; // When true, uses history cache instead of calling API (for history viewing)
   onComplete: (result: { 
     success: boolean; 
     url: string; 
@@ -58,7 +88,7 @@ interface ScanSimulationProps {
 }
 
 export default function ScanSimulation(props: ScanSimulationProps) {
-  const { url, businessName, onComplete, onError } = props;
+  const { url, businessName, onComplete, onError, useCache = false } = props;
 
   // Use refs for callbacks to prevent infinite loops from parent re-renders
   const { onScanStart } = props;
@@ -67,464 +97,388 @@ export default function ScanSimulation(props: ScanSimulationProps) {
 
   // Track if scan completed (survives re-renders, used for guard logic)
   const hasCompletedRef = useRef(false);
-  
+
   // Track current scan ID to prevent race conditions from late responses
   const activeScanIdRef = useRef<string | null>(null);
-  
-  // Refs for cleanup access to abort controller and timeout
+
+  // Refs for cleanup access to abort controller
   const controllerRef = useRef<AbortController | null>(null);
-  const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Single source of truth for scan state
   const [scanState, setScanState] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
+  const [currentStage, setCurrentStage] = useState<ScanStage>('connecting');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null); // Soft timeout warning for slow scans
+  
+  // Ref to track progress for preventing backward movement
+  const progressRef = useRef(0);
+  const apiCompletedRef = useRef(false);
 
-  // Reset completion flag when URL changes
-  useEffect(() => {
-    hasCompletedRef.current = false;
-  }, [url]);
-
-  // Phase index based on scan state, not progress
-  const phaseIndex = useMemo(() => {
-    if (scanState === 'idle') return 0;
-    if (scanState === 'running') return Math.min(Math.floor(progress / 25), 3);
-    return 3;
-  }, [scanState, progress]);
-
-  // Progress animation - purely visual, does NOT control scan completion
+  // Reset state when URL changes - only if not currently scanning
   useEffect(() => {
     if (scanState !== 'running') {
-      // Reset progress when not running
-      if (scanState === 'idle') setProgress(0);
-      if (scanState === 'completed') setProgress(100);
+      hasCompletedRef.current = false;
+      apiCompletedRef.current = false;
+      setCurrentStage('connecting');
+      progressRef.current = 0;
+      setProgress(0);
+    }
+  }, [url]);
+
+  // Get current step based on stage
+  const currentStepIndex = useMemo(() => {
+    const index = PROGRESSIVE_STEPS.findIndex(s => s.stage === currentStage);
+    return index >= 0 ? index : 0;
+  }, [currentStage]);
+
+  // GUIDED PROGRESSION MODEL - synced with API state, no timers
+  // 0-30%: initialization, 30-70%: API processing, 70-90%: final analysis, 90-100%: API complete
+  useEffect(() => {
+    if (scanState === 'idle') {
+      progressRef.current = 0;
+      setProgress(0);
       return;
     }
+    
+    if (scanState === 'completed') {
+      progressRef.current = 100;
+      setProgress(100);
+      return;
+    }
+    
+    if (scanState === 'error') {
+      // Pause at current progress on error, don't jump
+      return;
+    }
+    
+    if (scanState !== 'running') return;
 
-    let cancelled = false;
-    const start = performance.now();
-    const durationMs = 8000; // Longer duration to accommodate real scans
-
-    const tick = (now: number) => {
-      if (cancelled || scanState !== 'running') return;
-      const elapsed = now - start;
-      const t = clamp(elapsed / durationMs, 0, 1);
-      const eased = easeOutCubic(t);
-      const next = Math.floor(eased * 100);
-      setProgress((prev) => (next > prev ? next : prev));
-      requestAnimationFrame(tick);
+    // Phase-based progress caps - progress can only move forward within each phase
+    const phaseCaps: Record<ScanStage, number> = {
+      connecting: 30,   // Init phase: 0-30%
+      mobile: 55,       // Early API: 30-55%
+      desktop: 70,      // Mid API: 55-70%
+      processing: 90,   // Final analysis: 70-90%
+      complete: 100,    // Done: 100% (set by API completion)
+      error: 100
     };
 
-    requestAnimationFrame(tick);
+    const cap = phaseCaps[currentStage] ?? 90;
+    let cancelled = false;
+
+    // Smooth incremental progress - small steps toward the phase cap
+    const animateProgress = () => {
+      if (cancelled || scanState !== 'running') return;
+      
+      const current = progressRef.current;
+      
+      // Stop if we've hit the phase cap (wait for phase change or API complete)
+      if (current >= cap) {
+        // Check if API completed while we were waiting
+        if (apiCompletedRef.current && current < 100) {
+          progressRef.current = 100;
+          setProgress(100);
+        }
+        return;
+      }
+      
+      // Small incremental step - never jump more than 1-2%
+      const remaining = cap - current;
+      const step = Math.max(remaining * 0.02, 0.3); // 2% of remaining, min 0.3%
+      const next = Math.min(current + step, cap);
+      
+      // Only move forward (never backward)
+      if (next > progressRef.current) {
+        progressRef.current = next;
+        setProgress(Math.floor(next));
+      }
+      
+      // Continue animation with small delay for smooth feel
+      setTimeout(() => {
+        if (!cancelled) requestAnimationFrame(animateProgress);
+      }, 100);
+    };
+
+    requestAnimationFrame(animateProgress);
 
     return () => {
       cancelled = true;
     };
-  }, [scanState]);
+  }, [scanState, currentStage]);
 
-  // Main scan execution - completely separate from progress animation
+  // Helper to transform API response to legacy format - defined outside useEffect to avoid hoisting issues
+  const transformToLegacyFormat = useMemo(() => {
+    return (data: AuditResponse, url: string) => {
+      const extractScores = (deviceData: unknown) => {
+        if (!deviceData || typeof deviceData !== 'object') {
+          return { performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {} };
+        }
+        const d = deviceData as Record<string, unknown>;
+
+        if (typeof d.performance === 'number') {
+          return {
+            performance: d.performance,
+            seo: (d.seo as number) || 0,
+            accessibility: (d.accessibility as number) || 0,
+            bestPractices: (d.bestPractices as number) || 0,
+            lhr: (d.lhr as object) || {}
+          };
+        }
+
+        const scores = d.scores as Record<string, { score?: number }> | undefined;
+        if (scores) {
+          return {
+            performance: Math.round((scores.performance?.score || 0) * 100),
+            seo: Math.round((scores.seo?.score || 0) * 100),
+            accessibility: Math.round((scores.accessibility?.score || 0) * 100),
+            bestPractices: Math.round((scores['best-practices']?.score || 0) * 100),
+            lhr: (d.lhr as object) || {}
+          };
+        }
+
+        return { performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {} };
+      };
+
+      const desktopScores = extractScores(data.desktop);
+      const mobileScores = extractScores(data.mobile);
+
+      return {
+        success: data.success,
+        source: data.source || "pagespeed_insights",
+        url: url,
+        desktop: data.desktop ? {
+          performance: desktopScores.performance,
+          seo: desktopScores.seo,
+          accessibility: desktopScores.accessibility,
+          bestPractices: desktopScores.bestPractices,
+          lhr: desktopScores.lhr
+        } : {
+          performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {}
+        },
+        mobile: data.mobile ? {
+          performance: mobileScores.performance,
+          seo: mobileScores.seo,
+          accessibility: mobileScores.accessibility,
+          bestPractices: mobileScores.bestPractices,
+          lhr: mobileScores.lhr
+        } : {
+          performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {}
+        }
+      };
+    };
+  }, []);
+
+  // Main scan execution with progressive loading
   useEffect(() => {
-    // Auto-start scan when component mounts or URL changes
     // Only run if we're idle and have a valid URL
     if (scanState !== 'idle' || !url) {
       return;
     }
 
-    // Guard against multiple concurrent scans for the SAME URL
-    // Use URL-only as key (no timestamp) so guard actually works
-    const scanLockKey = url;
-    const existingLock = (window as unknown as Record<string, { url: string; timestamp: number } | undefined>).__activeScan;
+    // Guard against multiple concurrent scans
+    if (hasCompletedRef.current) {
+      return;
+    }
     
-    if (existingLock?.url === url) {
-      const age = Date.now() - existingLock.timestamp;
-      if (age < 60000) { // 60 second lock timeout
-        frontendLogger.warn(`Scan already in progress for: ${url} (age: ${age}ms)`);
+    // ONLY use cache when explicitly in history mode (useCache=true)
+    // Fresh scans ALWAYS call the API
+    if (useCache) {
+      const historyEntry = getLatestHistory(url);
+      if (historyEntry) {
+        // Use cached history result immediately without API call
+        const legacyData = transformToLegacyFormat(historyEntry.data, url);
+        setScanState('completed');
+        setProgress(100);
+        setCurrentStage('complete');
+        hasCompletedRef.current = true;
+        callbacksRef.current.onComplete(legacyData, historyEntry.scanId);
         return;
       }
-      frontendLogger.debug(`Clearing stale scan lock for: ${url} (age: ${age}ms)`);
+      // No history found - fall through to API call even in cache mode
     }
 
-    // Set new scan lock
-    (window as unknown as Record<string, { url: string; timestamp: number }>).__activeScan = {
-      url,
-      timestamp: Date.now()
-    };
-
-    frontendLogger.info(`Starting scan for URL: ${url}`);
-
     // Generate unique scan ID for this scan instance
-    // Use crypto.randomUUID() if available, fallback to timestamp-based ID
-    const scanId = typeof crypto !== 'undefined' && crypto.randomUUID 
-      ? crypto.randomUUID() 
+    const scanId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
       : `${url}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    activeScanIdRef.current = scanId; // Set as active scan for race protection
-    hasCompletedRef.current = false; // Reset completion flag for new scan
-    
-    frontendLogger.info(`[ScanSimulation] Starting scan ${scanId} for: ${url}`);
-    
-    // Notify parent of scan start with scanId
+
+    activeScanIdRef.current = scanId;
+    hasCompletedRef.current = false;
+
+    // Notify parent of scan start
     if (callbacksRef.current.onScanStart) {
       callbacksRef.current.onScanStart(scanId);
     }
-    
-    // Track completion locally - don't use React state for flow control
+
+    // Track completion locally
     let flowState: 'running' | 'completed' | 'error' = 'running';
-    let progressInterval: NodeJS.Timeout | null = null;
-    let hardTimeout: NodeJS.Timeout | null = null;
 
     // Start the scan
     setScanState('running');
+    setCurrentStage('connecting');
     setError(null);
-    setProgress(0);
+    setProgress(5);
+
+    // Stage progression based on progress, not arbitrary timers
+    // This keeps UI stages roughly aligned with progress phases
+    const updateStageFromProgress = () => {
+      const currentProgress = progressRef.current;
+      
+      if (currentProgress < 20) {
+        setCurrentStage('connecting');
+      } else if (currentProgress < 40) {
+        setCurrentStage('mobile');
+      } else if (currentProgress < 60) {
+        setCurrentStage('desktop');
+      } else if (currentProgress < 90) {
+        setCurrentStage('processing');
+      }
+    };
+    
+    // Subscribe to progress changes to update stage
+    const intervalId = setInterval(() => {
+      if (flowState === 'running') {
+        updateStageFromProgress();
+      }
+    }, 500);
+
+    const clearStageTracking = () => clearInterval(intervalId);
 
     (async () => {
       try {
-        frontendLogger.debug(`[Scan ${scanId}] Making API call to /api/lighthouse/audit`);
-        
-        // Create AbortController ONLY for user cancellation or component unmount
-        // NO automatic time-based abort - PageSpeed API can legitimately take 10-60s
+        // Create AbortController for cleanup only
         controllerRef.current = new AbortController();
-        
-        // Progress simulation: gradually increase from 0 to 90% while waiting
-        // Real progress completes when API returns
-        let simulatedProgress = 0;
-        progressInterval = setInterval(() => {
-          if (flowState !== 'running') {
-            clearInterval(progressInterval!);
-            return;
-          }
-          // Slow progress: 0-90% over ~60 seconds
-          if (simulatedProgress < 90) {
-            simulatedProgress += Math.random() * 2;
-            setProgress(Math.min(simulatedProgress, 90));
-          }
-        }, 1000);
-        
-        // Soft timeout: Warn user after 30s
-        warningTimeoutRef.current = setTimeout(() => {
-          frontendLogger.warn(`[Scan ${scanId}] Taking longer than expected (>30s)`);
-          setWarning("This scan is taking longer than usual... Google PageSpeed is still analyzing your site.");
-        }, 30000);
-        
-        // HARD TIMEOUT: Force completion after 120 seconds (2 minutes)
-        // PageSpeed API should never take longer than this
-        hardTimeout = setTimeout(() => {
-          if (flowState === 'running') {
-            frontendLogger.error(`[Scan ${scanId}] HARD TIMEOUT - forcing error after 120s`);
-            controllerRef.current?.abort();
-            flowState = 'error';
-            setScanState('error');
-            setProgress(0);
-            setError('Scan timed out. Please try again.');
-            if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
-              callbacksRef.current.onError('Scan timed out after 120 seconds', scanId);
-            }
-          }
-        }, 120000);
-        
+
         const res = await fetch("/api/lighthouse/audit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, businessName, deviceMode: "desktop" }),
-          signal: controllerRef.current.signal, // Only aborted on user cancel or unmount
+          body: JSON.stringify({ url, businessName }),
+          signal: controllerRef.current.signal,
         });
-        
-        // Clear warning timeout once response arrives
-        if (warningTimeoutRef.current) {
-          clearTimeout(warningTimeoutRef.current);
-          warningTimeoutRef.current = null;
-        }
-        setWarning(null); // Clear any warning message
 
-        frontendLogger.debug(`[Scan ${scanId}] API response status: ${res.status}`);
-
-        // RACE CONDITION GUARD: Ignore response if this is not the active scan anymore
+        // RACE CONDITION GUARD
         if (activeScanIdRef.current !== scanId) {
-          frontendLogger.debug(`[Scan ${scanId}] Ignoring stale response - newer scan active`);
           return;
         }
 
-        // SOFT FAILURE HANDLING: Parse error response without throwing
         if (!res.ok) {
           const payload = (await res.json().catch(() => null)) as { error?: string; errorType?: string } | null;
-          frontendLogger.warn(`[Scan ${scanId}] API error response (status ${res.status})`, payload);
-          
-          // Classify error: config_error is hard failure, others are soft (might retry)
           const isHardFailure = payload?.errorType === "config_error" || res.status === 401 || res.status === 403;
-          
-          if (isHardFailure) {
-            // Hard failure: API key missing, auth error - show error state
-            flowState = 'error';
-            hasCompletedRef.current = true;
-            const errorMessage = payload?.errorType === "config_error" 
-              ? USER_ERROR_MESSAGES.config_error 
-              : (payload?.error || "Authentication failed.");
-            setError(errorMessage);
-            setScanState('error');
-            // RACE CONDITION GUARD: Only call callback if this is still the active scan
-            if (activeScanIdRef.current === scanId) {
-              if (callbacksRef.current.onError) {
-                callbacksRef.current.onError(errorMessage, scanId);
-              }
-            }
-          } else {
-            // Soft failure: temporary 500, timeout, etc. - show error but allow retry
-            flowState = 'error';
-            hasCompletedRef.current = true;
-            const errorMessage = payload?.error || `Audit service temporarily unavailable (${res.status}). Please try again.`;
-            setError(errorMessage);
-            setScanState('error');
-            // RACE CONDITION GUARD: Only call callback if this is still the active scan
-            if (activeScanIdRef.current === scanId) {
-              if (callbacksRef.current.onError) {
-                callbacksRef.current.onError(errorMessage, scanId);
-              }
-            }
+
+          flowState = 'error';
+          hasCompletedRef.current = true;
+          setCurrentStage('error');
+          const errorMessage = isHardFailure
+            ? USER_ERROR_MESSAGES.config_error
+            : (payload?.error || "Analysis failed");
+          setError(errorMessage);
+          setScanState('error');
+          if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
+            callbacksRef.current.onError(errorMessage, scanId);
           }
-          return; // Graceful exit - scan completed with error state
+          return;
         }
 
         const data = (await res.json()) as AuditResponse;
-        frontendLogger.debug(`[Scan ${scanId}] API response data`, { 
-          success: data.success, 
-          hasError: !!data.error,
-          hasDesktop: !!data.desktop,
-          hasMobile: !!data.mobile 
-        });
 
-        // Safe validation with PARTIAL SUCCESS support
-        let isValid = true;
-        let errorMessage = '';
-
-        // Validate API response structure
+        // Validate API response
         if (!data || typeof data !== 'object') {
-          frontendLogger.warn(`[Scan ${scanId}] Invalid API response format`, data);
-          isValid = false;
-          errorMessage = "Invalid API response format.";
-        } else if (data.success === false) {
-          // API explicitly returned failure
-          frontendLogger.warn(`[Scan ${scanId}] API returned success: false`, data);
-          isValid = false;
-          errorMessage = data.error || data.errorType 
-            ? USER_ERROR_MESSAGES[data.errorType as keyof typeof USER_ERROR_MESSAGES] 
-            : "Unable to complete audit";
-        } else if (data.errorType === "config_error") {
-          // Config errors are expected when API key is missing - HARD FAILURE
-          frontendLogger.expectedFailure("config_error", data.error || "API not configured");
-          isValid = false;
-          errorMessage = USER_ERROR_MESSAGES.config_error;
-        } else if (data.error) {
-          // API returned error field - SOFT FAILURE (might succeed on retry)
-          frontendLogger.warn(`[Scan ${scanId}] API reported failure`, data.error);
-          isValid = false;
-          errorMessage = data.errorType 
-            ? USER_ERROR_MESSAGES[data.errorType] 
-            : (data.error || "Unable to complete audit");
+          throw new Error("Invalid API response");
         }
-        // NOTE: Partial success - accept if we have at least desktop OR mobile data
-        // This handles cases where Google API returns one device but not the other
 
-        if (!isValid) {
-          frontendLogger.debug(`[Scan ${scanId}] Validation failed: ${errorMessage}`);
-          // CRITICAL: Always update state - never silent fail
+        if (data.success === false) {
+          const errorMessage = data.error || "Analysis failed";
           flowState = 'error';
           hasCompletedRef.current = true;
-          setWarning(null); // Clear any warning
+          setCurrentStage('error');
           setScanState('error');
           setError(errorMessage);
-          // RACE CONDITION GUARD: Only call callback if this is still the active scan
-          if (activeScanIdRef.current === scanId) {
-            if (callbacksRef.current.onError) {
-              callbacksRef.current.onError(errorMessage, scanId);
-            }
-          } else {
-            frontendLogger.debug(`[Scan ${scanId}] Skipping error callback - scan is no longer active`);
+          if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
+            callbacksRef.current.onError(errorMessage, scanId);
           }
           return;
         }
-        
-        // CRITICAL SUCCESS PATH: This MUST execute when API returns valid data
-        frontendLogger.info(`[Scan ${scanId}] Completed successfully for: ${url}`);
+
+        if (data.errorType === "config_error") {
+          const errorMessage = USER_ERROR_MESSAGES.config_error;
+          flowState = 'error';
+          hasCompletedRef.current = true;
+          setCurrentStage('error');
+          setScanState('error');
+          setError(errorMessage);
+          if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
+            callbacksRef.current.onError(errorMessage, scanId);
+          }
+          return;
+        }
+
+        // Store result in history (supports multiple scans per URL)
+        addToHistory(url, data, scanId);
+
+        // Mark API as completed - this will trigger final progress to 100%
+        apiCompletedRef.current = true;
         flowState = 'completed';
         hasCompletedRef.current = true;
-        
-        // Clear any warning - scan completed successfully
-        setWarning(null);
-        
-        // CRITICAL: Update React state to 'completed' - this triggers UI change
+        setCurrentStage('complete');
         setScanState('completed');
         
-        // Transform API response to legacy format - handles BOTH new flat format AND old nested format
-        // New API: { mobile: { performance: 85, seo: 90, ... } }
-        // Old API: { mobile: { scores: { performance: { score: 0.85 }, ... } } }
-        const { onComplete: completeCallback } = callbacksRef.current;
-        
-        const extractScores = (deviceData: unknown) => {
-          if (!deviceData || typeof deviceData !== 'object') {
-            return { performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {} };
-          }
-          const d = deviceData as Record<string, unknown>;
-          
-          // New flat format (API returns 0-100 numbers directly)
-          if (typeof d.performance === 'number') {
-            return {
-              performance: d.performance,
-              seo: (d.seo as number) || 0,
-              accessibility: (d.accessibility as number) || 0,
-              bestPractices: (d.bestPractices as number) || 0,
-              lhr: (d.lhr as object) || (d.rawLhr as object) || {}
-            };
-          }
-          
-          // Old nested format (scores.performance.score was 0-1)
-          const scores = d.scores as Record<string, { score?: number }> | undefined;
-          if (scores) {
-            return {
-              performance: Math.round((scores.performance?.score || 0) * 100),
-              seo: Math.round((scores.seo?.score || 0) * 100),
-              accessibility: Math.round((scores.accessibility?.score || 0) * 100),
-              bestPractices: Math.round((scores['best-practices']?.score || 0) * 100),
-              lhr: (d.rawLhr as object) || {}
-            };
-          }
-          
-          return { performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {} };
-        };
-        
-        const desktopScores = extractScores(data.desktop);
-        const mobileScores = extractScores(data.mobile);
-        
-        const legacyData = {
-          success: data.success,
-          source: data.source || "pagespeed_insights",
-          url: url,
-          desktop: data.desktop ? {
-            performance: desktopScores.performance,
-            seo: desktopScores.seo,
-            accessibility: desktopScores.accessibility,
-            bestPractices: desktopScores.bestPractices,
-            lhr: desktopScores.lhr
-          } : {
-            performance: 0,
-            seo: 0,
-            accessibility: 0,
-            bestPractices: 0,
-            lhr: {}
-          },
-          mobile: data.mobile ? {
-            performance: mobileScores.performance,
-            seo: mobileScores.seo,
-            accessibility: mobileScores.accessibility,
-            bestPractices: mobileScores.bestPractices,
-            lhr: mobileScores.lhr
-          } : {
-            performance: 0,
-            seo: 0,
-            accessibility: 0,
-            bestPractices: 0,
-            lhr: {}
-          }
-        };
-        
-        // RACE CONDITION GUARD: Only call callback if this is still the active scan
+        // Final progress will be set by the progress effect when it sees apiCompletedRef
+        const legacyData = transformToLegacyFormat(data, url);
+
         if (activeScanIdRef.current === scanId) {
-          frontendLogger.info(`[Scan ${scanId}] Calling onComplete callback`);
-          completeCallback(legacyData, scanId);
-        } else {
-          frontendLogger.debug(`[Scan ${scanId}] Skipping onComplete callback - scan is no longer active`);
+          callbacksRef.current.onComplete(legacyData, scanId);
         }
       } catch (e) {
-        // RACE CONDITION GUARD: Don't update state if this is not the active scan anymore
         if (activeScanIdRef.current !== scanId) {
-          frontendLogger.debug(`[Scan ${scanId}] Ignoring stale error - newer scan active`);
           return;
         }
-        
-        // Check if this is an abort (user cancelled or component unmounted)
+
         const isAbort = e instanceof Error && e.name === 'AbortError';
-        
         if (isAbort) {
-          frontendLogger.info(`[Scan ${scanId}] Scan was cancelled by user or component unmount`);
-          // Don't update state - the new scan or unmount will handle it
           return;
         }
-        
-        // CRITICAL: Handle unexpected errors - always transition to error state, never get stuck
-        const message = e instanceof Error ? e.message : "Failed to run Lighthouse audit.";
-        
-        frontendLogger.error(`[Scan ${scanId}] Unexpected error:`, e);
-        
-        // CRITICAL: Always update state - never leave in 'running'
+
+        const message = e instanceof Error ? e.message : "Analysis failed";
+
         flowState = 'error';
         hasCompletedRef.current = true;
-        setWarning(null); // Clear any warning
+        setCurrentStage('error');
         setError(message);
         setScanState('error');
-        
-        // RACE CONDITION GUARD: Only call callback if this is still the active scan
-        if (activeScanIdRef.current === scanId) {
-          // Use ref to call callback without dependency issues
-          if (callbacksRef.current.onError) {
-            callbacksRef.current.onError(message, scanId);
-          }
-        } else {
-          frontendLogger.debug(`[Scan ${scanId}] Skipping error callback - scan is no longer active`);
+
+        if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
+          callbacksRef.current.onError(message, scanId);
         }
       }
     })();
 
     return () => {
-      // Cleanup: Clear all timers and intervals
-      if (progressInterval) {
-        clearInterval(progressInterval);
-        progressInterval = null;
-      }
-      if (hardTimeout) {
-        clearTimeout(hardTimeout);
-        hardTimeout = null;
-      }
-      if (warningTimeoutRef.current) {
-        clearTimeout(warningTimeoutRef.current);
-        warningTimeoutRef.current = null;
-      }
-      
-      // Abort any in-flight fetch (this triggers AbortError in catch block)
-      // Only if scan hasn't completed - completed scans don't need cleanup
+      clearStageTracking();
       if (flowState === 'running' && !hasCompletedRef.current && controllerRef.current) {
-        frontendLogger.debug(`[Scan ${scanId}] Cleanup - aborting in-flight request`);
-        controllerRef.current.abort(); // Triggers AbortError which is handled gracefully
-        
-        // Clear scan lock
-        const active = (window as unknown as Record<string, { url: string } | undefined>).__activeScan;
-        if (active?.url === url) {
-          (window as unknown as Record<string, unknown>).__activeScan = undefined;
-        }
+        controllerRef.current.abort();
       }
-      
-      // Clear refs
       controllerRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]); // CRITICAL: Only re-run when URL changes - NOT businessName
+  }, [url, transformToLegacyFormat, businessName]);
 
   return (
     <div className="w-full">
       <div className="flex items-start justify-between gap-6">
         <div>
-          <div className="text-sm text-neutral-700 font-light">Lighthouse powered analysis</div>
+          <div className="text-sm text-neutral-700 font-light">Performance Analysis Engine</div>
           <h2 className="mt-2 text-2xl font-light text-neutral-950">
-            {scanState === 'idle' && 'Ready to start analysis…'}
-            {scanState === 'running' && 'Analyzing website performance…'}
-            {scanState === 'completed' && 'Analysis completed successfully!'}
-            {scanState === 'error' && 'Analysis encountered an issue'}
+            {scanState === 'idle' && 'Ready to analyze your website'}
+            {scanState === 'running' && PROGRESSIVE_STEPS[currentStepIndex]?.label || 'Processing...'}
+            {scanState === 'completed' && 'Analysis complete'}
+            {scanState === 'error' && 'Unable to complete analysis'}
           </h2>
           <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
-            {scanState === 'idle' && 'Click to start a comprehensive Lighthouse audit of your website.'}
-            {scanState === 'running' && 'Running comprehensive Lighthouse analysis and collecting performance metrics...'}
-            {scanState === 'completed' && 'Analysis complete! Preparing your detailed performance report.'}
-            {scanState === 'error' && (error || 'An error occurred during the analysis. Please try again.')}
+            {scanState === 'idle' && 'Initiate a comprehensive performance evaluation of your website.'}
+            {scanState === 'running' && (
+              <span className="block">{PROGRESSIVE_STEPS[currentStepIndex]?.hint || 'Processing...'}</span>
+            )}
+            {scanState === 'completed' && 'Your performance report is ready. Review your insights below.'}
+            {scanState === 'error' && (error || 'An error occurred during analysis. Please try again.')}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -549,39 +503,41 @@ export default function ScanSimulation(props: ScanSimulationProps) {
         </div>
 
         <div className="mt-5 grid gap-3">
-          {STEPS.map((s, idx) => {
-            const state = idx < phaseIndex ? "done" : idx === phaseIndex ? "active" : "upcoming";
+          {PROGRESSIVE_STEPS.map((s, idx) => {
+            const isDone = idx < currentStepIndex;
+            const isActive = idx === currentStepIndex && scanState === 'running';
+            const isUpcoming = idx > currentStepIndex;
+            
             return (
               <div
                 key={s.label}
-                className="flex items-start justify-between gap-4 rounded-2xl border border-neutral-200 bg-white px-4 py-3 transition-colors"
+                className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-3 transition-all duration-300 ${
+                  isActive ? 'border-blue-300 bg-blue-50/50' : 
+                  isDone ? 'border-green-200 bg-green-50/30' : 
+                  'border-neutral-200 bg-white'
+                }`}
               >
                 <div>
-                  <div className="text-sm text-neutral-950 font-light">{s.label}</div>
+                  <div className={`text-sm font-light ${isActive ? 'text-blue-700' : isDone ? 'text-green-700' : 'text-neutral-950'}`}>
+                    {s.label}
+                  </div>
                   <div className="text-xs text-neutral-500 mt-1">{s.hint}</div>
                 </div>
                 <div className="mt-1">
-                  {state === "active" ? (
-                    <div className="flex items-center gap-2 text-xs text-neutral-600 font-light">
-                      <span className="inline-flex h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                      running
+                  {isActive ? (
+                    <div className="flex items-center gap-2 text-xs text-blue-600 font-light">
+                      <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                      in progress
                     </div>
-                  ) : state === "done" ? (
-                    <div className="inline-flex items-center justify-center h-7 w-7 rounded-xl bg-green-50 border border-green-200">
+                  ) : isDone ? (
+                    <div className="inline-flex items-center justify-center h-7 w-7 rounded-xl bg-green-100 border border-green-300">
                       <svg className="h-4 w-4 text-green-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path
-                          fillRule="evenodd"
-                          d="M16.704 5.29a1 1 0 0 1 .006 1.415l-7.1 7.2a1 1 0 0 1-1.423-.014l-3.39-3.45a1 1 0 1 1 1.434-1.4l2.673 2.724 6.39-6.48a1 1 0 0 1 1.41.006Z"
-                          clipRule="evenodd"
-                        />
+                        <path fillRule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.415l-7.1 7.2a1 1 0 0 1-1.423-.014l-3.39-3.45a1 1 0 1 1 1.434-1.4l2.673 2.724 6.39-6.48a1 1 0 0 1 1.41.006Z" clipRule="evenodd" />
                       </svg>
                     </div>
                   ) : (
-                    <div className="inline-flex items-center justify-center h-7 w-7 rounded-xl bg-neutral-50 border border-neutral-200">
-                      <svg className="h-4 w-4 text-neutral-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                        <path d="M7 5h6v2H7V5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-                        <path d="M6 8h8v7H6V8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-                      </svg>
+                    <div className="inline-flex items-center justify-center h-7 w-7 rounded-xl bg-neutral-100 border border-neutral-200">
+                      <span className="text-xs text-neutral-400">{idx + 1}</span>
                     </div>
                   )}
                 </div>
@@ -590,13 +546,12 @@ export default function ScanSimulation(props: ScanSimulationProps) {
           })}
         </div>
 
-        {error ? (
+        {error && (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
             {error}
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
 }
-

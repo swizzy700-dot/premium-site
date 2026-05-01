@@ -7,6 +7,7 @@ import WebsiteCheckerOnboardingModal from "@/components/website-checker/onboardi
 function WebsiteCheckerLandingInner() {
   const sp = useSearchParams();
   const start = sp.get("start");
+  const urlParam = sp.get("url");
 
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(start === "1");
@@ -20,14 +21,14 @@ function WebsiteCheckerLandingInner() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-xs text-neutral-700">
                 <span className="h-2 w-2 rounded-full bg-violet-400/80 animate-pulse" />
-                AI Audit + Lead Generation
+                Performance Intelligence Platform
               </div>
               <h1 className="mt-4 text-4xl sm:text-5xl font-light tracking-tight">
-                Professional website audits that drive inquiries.
+                Identify what&apos;s holding your website back.
               </h1>
               <p className="mt-4 text-neutral-600 max-w-2xl leading-relaxed">
-                Upload your website URL and get a conversion-focused audit across performance, SEO, accessibility, and best practices.
-                Then take the next step with confidence.
+                Enter your URL to receive a comprehensive performance assessment across speed, SEO, accessibility, and technical excellence. 
+                Get actionable insights to improve conversions.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -36,27 +37,27 @@ function WebsiteCheckerLandingInner() {
                   onClick={() => setIsOpen(true)}
                   className="rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-8 py-4 text-sm font-medium text-neutral-950 hover:opacity-95 transition-opacity"
                 >
-                  Check Your Website
+                  Launch Analysis
                 </button>
                 <div className="flex items-center rounded-full border border-neutral-200 bg-white px-4 py-4 text-sm text-neutral-600">
-                  Real-time Lighthouse scan experience.
+                  Powered by Google Lighthouse Insights
                 </div>
               </div>
             </div>
 
             <div className="rounded-3xl border border-neutral-200 bg-white p-6 sm:p-7">
-              <div className="text-xs uppercase tracking-[0.35em] text-neutral-500">What you’ll see</div>
+              <div className="text-xs uppercase tracking-[0.35em] text-neutral-500">Analysis Overview</div>
               <div className="mt-4 space-y-4">
                 {[
-                  { k: "Performance", d: "Faster load and more responsive interaction" },
-                  { k: "SEO", d: "Discoverability for high-intent searches" },
-                  { k: "Accessibility", d: "Usability that works for more visitors" },
-                  { k: "Best Practices", d: "Reliability, correctness, and quality signals" },
+                  { k: "Performance", d: "Speed metrics that impact user retention and conversions" },
+                  { k: "SEO", d: "Search visibility factors for high-intent traffic" },
+                  { k: "Accessibility", d: "Inclusive design standards that expand your reach" },
+                  { k: "Best Practices", d: "Technical quality signals that build trust" },
                 ].map((it) => (
                   <div key={it.k} className="flex items-start gap-4">
                     <span className="mt-1 h-2 w-2 rounded-full bg-cyan-300/70" />
                     <div>
-                      <div className="text-sm text-neutral-900">{it.k} audit</div>
+                      <div className="text-sm text-neutral-900">{it.k} Assessment</div>
                       <div className="text-sm text-neutral-600 leading-relaxed">{it.d}</div>
                     </div>
                   </div>
@@ -64,9 +65,9 @@ function WebsiteCheckerLandingInner() {
               </div>
 
               <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-                <div className="text-sm text-neutral-700">Conversion-focused next steps</div>
+                <div className="text-sm text-neutral-700">Actionable Intelligence</div>
                 <div className="mt-2 text-sm text-neutral-600 leading-relaxed">
-                  The results page pushes you toward a quote, expert conversation, and clear fixes—without pressure, just clarity.
+                  Receive prioritized recommendations with clear next steps to improve performance, engage more visitors, and drive measurable results.
                 </div>
               </div>
             </div>
@@ -80,6 +81,8 @@ function WebsiteCheckerLandingInner() {
           setIsOpen(false);
           router.replace("/website-checker");
         }}
+        initialUrl={urlParam || undefined}
+        autoStart={start === "1"}
       />
     </div>
   );
@@ -90,7 +93,7 @@ export default function WebsiteCheckerLanding() {
     <Suspense
       fallback={
         <div className="min-h-[60vh] mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20">
-          <div className="text-neutral-600">Loading Website Checker…</div>
+          <div className="text-neutral-600">Loading Performance Analysis…</div>
         </div>
       }
     >

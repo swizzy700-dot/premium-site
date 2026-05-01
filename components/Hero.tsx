@@ -13,15 +13,13 @@ export default function Hero() {
             <div className="max-w-3xl space-y-12">
               <div className="space-y-6">
                 <p className="text-xs uppercase tracking-[0.45em] text-neutral-500 font-light">
-                  Engineered for Presence. Designed for Growth.
+                  ENGINEERED FOR PRESENCE. DESIGNED FOR GROWTH.
                 </p>
                 <h1 className="text-5xl sm:text-6xl lg:text-6xl font-serif font-light leading-[0.95] tracking-tight text-white">
-                  Take a closer look at what your digital presence could become.
+                  Uncover what&apos;s limiting your website performance.
                 </h1>
                 <p className="max-w-2xl text-xl sm:text-2xl text-amber-200 leading-relaxed font-light tracking-wide">
-                  Not every issue is visible at first glance.  
-                  Beneath the surface, performance, structure, and user flow tell a very different story.  
-                  Take a moment to evaluate your website - and see what&apos;s really happening.
+                  Enter your website URL to reveal performance gaps, structural issues, and optimization opportunities that are costing you conversions.
                 </p>
               </div>
 
@@ -30,7 +28,7 @@ export default function Hero() {
                   href="/website-checker?start=1"
                   className="inline-flex items-center justify-center rounded-full bg-amber-500 px-10 py-5 text-base text-neutral-950 font-light tracking-[0.25em] uppercase transition-all duration-300 hover:bg-amber-400 hover:scale-105"
                 >
-                  Check Your Website
+                  CHECK YOUR WEBSITE PERFORMANCE
                 </Link>
               </div>
             </div>

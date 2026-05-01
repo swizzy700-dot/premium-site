@@ -96,8 +96,8 @@ export default function LighthouseResultsDashboard(props: {
       <div className="rounded-3xl border border-neutral-200 bg-white shadow-sm p-5 sm:p-7">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.35em] text-neutral-500">Website Analysis Complete</div>
-            <h2 className="mt-2 text-3xl sm:text-4xl font-light text-neutral-950">Website Performance Report</h2>
+            <div className="text-xs uppercase tracking-[0.35em] text-neutral-500">Analysis Complete</div>
+            <h2 className="mt-2 text-3xl sm:text-4xl font-light text-neutral-950">Performance Report</h2>
             <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
               Results for <span className="text-neutral-900 font-medium">{audit.url}</span>
             </p>
@@ -121,7 +121,7 @@ export default function LighthouseResultsDashboard(props: {
               onClick={onAnalyzeAnother}
               className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
             >
-              Analyze Another
+              Run New Analysis
             </button>
           </div>
         </div>
@@ -150,7 +150,7 @@ export default function LighthouseResultsDashboard(props: {
         {/* Mobile vs Desktop Comparison */}
         <div className="mt-8 grid gap-6 lg:grid-cols-2">
           <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-            <h3 className="text-lg font-medium text-neutral-950">Desktop Performance</h3>
+            <h3 className="text-lg font-medium text-neutral-950">Desktop Results</h3>
             <div className="mt-4 space-y-3">
               {SCORE_ORDER.map((key) => {
                 const score = audit.desktop[key === "best-practices" ? "bestPractices" : key as keyof typeof audit.desktop] as number;
@@ -171,7 +171,7 @@ export default function LighthouseResultsDashboard(props: {
           </div>
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-            <h3 className="text-lg font-medium text-neutral-950">Mobile Performance</h3>
+            <h3 className="text-lg font-medium text-neutral-950">Mobile Results</h3>
             <div className="mt-4 space-y-3">
               {SCORE_ORDER.map((key) => {
                 const score = audit.mobile[key === "best-practices" ? "bestPractices" : key as keyof typeof audit.mobile] as number;

@@ -114,7 +114,7 @@ export default function FloatingAiAssistant() {
             id: uid(),
             role: "assistant",
             content:
-              "Welcome. Start a Website Audit and I’ll explain your scores, recommend fixes, and guide you toward a professional quote.",
+              "Welcome. Run a performance analysis and I'll explain your scores, recommend improvements, and guide you toward professional support.",
           },
         ];
       });
@@ -176,7 +176,7 @@ export default function FloatingAiAssistant() {
           <button
             onClick={() => window.dispatchEvent(new CustomEvent("ai-assistant:open", { detail: {} }))}
             className="group flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white/90 backdrop-blur-xl px-4 py-3 text-left shadow-[0_20px_60px_rgba(2,6,23,0.12)] transition-all duration-300 hover:border-neutral-300 hover:translate-y-[-2px]"
-            aria-label="Open AI assistant chat"
+            aria-label="Open performance assistant"
           >
             <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-50 ring-1 ring-neutral-200">
               <span className="absolute inset-0 rounded-xl bg-gradient-to-b from-violet-400/20 to-cyan-400/10 blur-[10px]" />
@@ -196,8 +196,8 @@ export default function FloatingAiAssistant() {
               </svg>
             </span>
             <span className="hidden sm:block">
-              <span className="block text-sm font-medium text-neutral-900">AI Website Assistant</span>
-              <span className="block text-xs text-neutral-500">Explain + recommend fixes</span>
+              <span className="block text-sm font-medium text-neutral-900">Performance Assistant</span>
+              <span className="block text-xs text-neutral-500">Guidance and recommendations</span>
             </span>
           </button>
         ) : null}
@@ -231,8 +231,8 @@ export default function FloatingAiAssistant() {
                   </svg>
                 </span>
                 <div>
-                  <div className="text-sm font-medium text-neutral-950">AI Website Assistant</div>
-                  <div className="text-xs text-neutral-500">Explain + recommend conversion next steps</div>
+                  <div className="text-sm font-medium text-neutral-950">Performance Assistant</div>
+                  <div className="text-xs text-neutral-500">Expert guidance for your next steps</div>
                 </div>
               </div>
               <button
@@ -264,7 +264,7 @@ export default function FloatingAiAssistant() {
               <div className="space-y-3">
                 {messages.length === 0 ? (
                   <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700">
-                    Ask a question about your audit, or pick a quick action above.
+                    Ask a question about your analysis, or pick a quick action above.
                   </div>
                 ) : (
                   messages.map((msg) => (
