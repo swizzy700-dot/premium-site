@@ -215,6 +215,7 @@ export default function ScanSimulation(props: ScanSimulationProps) {
         }
         const d = deviceData as Record<string, unknown>;
 
+        // Handle flat score format (from API route)
         if (typeof d.performance === 'number') {
           return {
             performance: d.performance,
@@ -225,6 +226,7 @@ export default function ScanSimulation(props: ScanSimulationProps) {
           };
         }
 
+        // Handle nested scores format (from auditEngine)
         const scores = d.scores as Record<string, { score?: number }> | undefined;
         if (scores) {
           return {
@@ -239,14 +241,23 @@ export default function ScanSimulation(props: ScanSimulationProps) {
         return { performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {} };
       };
 
-      const desktopScores = extractScores(data.desktop);
-      const mobileScores = extractScores(data.mobile);
+      // Safe extraction with null checks - partial data is still valid
+      const desktopData = data.desktop ?? null;
+      const mobileData = data.mobile ?? null;
+      
+      const desktopScores = extractScores(desktopData);
+      const mobileScores = extractScores(mobileData);
+
+      // Check if we have ANY data (partial success is still success)
+      const hasAnyData = desktopData !== null || mobileData !== null;
 
       return {
-        success: data.success,
+        success: hasAnyData ? true : data.success,
+        status: data.status || (hasAnyData ? "partial" : "failed"),
         source: data.source || "pagespeed_insights",
         url: url,
-        desktop: data.desktop ? {
+        // Always return valid objects - never null to prevent UI crashes
+        desktop: desktopData ? {
           performance: desktopScores.performance,
           seo: desktopScores.seo,
           accessibility: desktopScores.accessibility,
@@ -255,7 +266,7 @@ export default function ScanSimulation(props: ScanSimulationProps) {
         } : {
           performance: 0, seo: 0, accessibility: 0, bestPractices: 0, lhr: {}
         },
-        mobile: data.mobile ? {
+        mobile: mobileData ? {
           performance: mobileScores.performance,
           seo: mobileScores.seo,
           accessibility: mobileScores.accessibility,
@@ -379,9 +390,19 @@ export default function ScanSimulation(props: ScanSimulationProps) {
           return;
         }
 
-        // Validate API response structure
+        // Validate API response structure - NEVER throw, handle gracefully
         if (!data || typeof data !== 'object') {
-          throw new Error("Invalid API response");
+          // Invalid response structure - treat as complete failure
+          const errorMessage = "Invalid API response format";
+          flowState = 'error';
+          hasCompletedRef.current = true;
+          setCurrentStage('error');
+          setScanState('error');
+          setError(errorMessage);
+          if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
+            callbacksRef.current.onError(errorMessage, scanId);
+          }
+          return;
         }
 
         // Check for complete failure (both mobile AND desktop null)
