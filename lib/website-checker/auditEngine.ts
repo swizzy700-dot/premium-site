@@ -7,6 +7,10 @@
  * - NEVER generates fake/simulated data
  * - STRICT error classification
  * - ALWAYS returns complete AuditResponse (never undefined fields)
+ * - NO TIMEOUTS - let API complete naturally
+ * - SEQUENTIAL execution: mobile first, then desktop
+ * - RETRY logic: 1 retry max on failure
+ * - PARTIAL results: return whatever succeeds
  */
 
 import {
@@ -30,6 +34,7 @@ const PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPage
 /**
  * Main entry point: Run complete audit for a URL
  * Returns unified AuditResponse with strict data contract
+ * SEQUENTIAL execution: mobile first, then desktop
  */
 export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
   const scannedAt = new Date().toISOString();
@@ -45,33 +50,10 @@ export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
     }
 
     // Check API key configuration
-    // Try multiple common env variable names (Vercel, Netlify, etc. use different conventions)
-    const possibleKeyNames = [
-      "PAGESPEED_API_KEY",
-      "NEXT_PUBLIC_PAGESPEED_API_KEY",  // Some platforms require this prefix
-      "pagespeed_api_key",
-      "GOOGLE_PAGESPEED_API_KEY",
-      "PAGESPEED_KEY",
-    ];
+    const apiKey = process.env.PAGESPEED_API_KEY;
     
-    let apiKey: string | undefined;
-    let foundKeyName: string | undefined;
-    
-    for (const keyName of possibleKeyNames) {
-      const value = process.env[keyName];
-      if (value && value.trim() && !value.includes("your_")) {
-        apiKey = value.trim();
-        foundKeyName = keyName;
-        break;
-      }
-    }
-    
-    // Production debugging: log what's available (safe - only logs presence, not value)
-    console.log(`[AuditEngine] Found API key in: ${foundKeyName || "NONE"}`);
-    console.log(`[AuditEngine] NODE_ENV: ${process.env.NODE_ENV}`);
-    console.log(`[AuditEngine] Checked env vars: ${possibleKeyNames.map(k => `${k}=${process.env[k] ? "✓" : "✗"}`).join(", ")}`);
-    
-    if (!apiKey) {
+    if (!apiKey || typeof apiKey !== "string" || apiKey.trim() === "") {
+      console.error("[AuditEngine] Missing PAGESPEED_API_KEY");
       auditLogger.configMissing("AuditEngine");
       return createErrorResponse(
         ERROR_MESSAGES.config_error,
@@ -82,52 +64,60 @@ export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
 
     const normalizedUrl = normalizeUrl(url);
 
-    // Run both mobile and desktop audits in parallel
-    const [mobileResult, desktopResult] = await Promise.allSettled([
-      fetchPageSpeedData(normalizedUrl, "mobile", apiKey),
-      fetchPageSpeedData(normalizedUrl, "desktop", apiKey),
-    ]);
-
-    // Process results
-    let desktop: DeviceAudit | null = null;
+    // SEQUENTIAL execution: mobile FIRST, then desktop
+    // This ensures we get mobile data quickly without waiting for both
     let mobile: DeviceAudit | null = null;
-    let hasValidData = false;
+    let desktop: DeviceAudit | null = null;
+    let mobileError: string | null = null;
+    let desktopError: string | null = null;
 
-    if (desktopResult.status === "fulfilled" && desktopResult.value) {
-      desktop = processPageSpeedData(desktopResult.value);
-      if (desktop) hasValidData = true;
-    } else if (desktopResult.status === "rejected") {
-      const reason = desktopResult.reason;
-      console.error("[AuditEngine] Desktop scan FAILED:", reason instanceof Error ? reason.message : reason);
-      auditLogger.scanFailed("AuditEngine", url, reason);
+    // Run mobile FIRST
+    console.log("[AuditEngine] Starting mobile audit...");
+    try {
+      const mobileData = await fetchPageSpeedDataWithRetry(normalizedUrl, "mobile", apiKey.trim());
+      mobile = processPageSpeedData(mobileData);
+      console.log(`[AuditEngine] Mobile audit success: ${mobile ? "valid data" : "no data"}`);
+    } catch (error) {
+      mobileError = error instanceof Error ? error.message : "Mobile audit failed";
+      console.error("[AuditEngine] Mobile scan FAILED:", mobileError);
+      auditLogger.scanFailed("AuditEngine", url, error);
     }
 
-    if (mobileResult.status === "fulfilled" && mobileResult.value) {
-      mobile = processPageSpeedData(mobileResult.value);
-      if (mobile) hasValidData = true;
-    } else if (mobileResult.status === "rejected") {
-      const reason = mobileResult.reason;
-      console.error("[AuditEngine] Mobile scan FAILED:", reason instanceof Error ? reason.message : reason);
-      auditLogger.scanFailed("AuditEngine", url, reason);
+    // Then run desktop AFTER mobile completes
+    console.log("[AuditEngine] Starting desktop audit...");
+    try {
+      const desktopData = await fetchPageSpeedDataWithRetry(normalizedUrl, "desktop", apiKey.trim());
+      desktop = processPageSpeedData(desktopData);
+      console.log(`[AuditEngine] Desktop audit success: ${desktop ? "valid data" : "no data"}`);
+    } catch (error) {
+      desktopError = error instanceof Error ? error.message : "Desktop audit failed";
+      console.error("[AuditEngine] Desktop scan FAILED:", desktopError);
+      auditLogger.scanFailed("AuditEngine", url, error);
     }
 
-    // STRICT: Must have at least one valid result
+    // Check if at least one succeeded
+    const hasMobile = mobile !== null;
+    const hasDesktop = desktop !== null;
+    const hasValidData = hasMobile || hasDesktop;
+
     if (!hasValidData) {
       console.error("[AuditEngine] NO VALID DATA from either desktop or mobile scan");
+      const combinedError = [mobileError, desktopError].filter(Boolean).join(" | ");
       return createErrorResponse(
-        ERROR_MESSAGES.scan_error,
+        combinedError || ERROR_MESSAGES.scan_error,
         "scan_error",
         scannedAt
       );
     }
 
+    // Return response with partial support
     return {
       success: true,
       source: "pagespeed_insights",
       desktop,
       mobile,
-      error: null,
-      errorType: null,
+      error: combinedErrors(mobileError, desktopError),
+      errorType: (!hasMobile || !hasDesktop) ? "scan_error" : null,
       scannedAt,
     };
   } catch (error) {
@@ -141,13 +131,31 @@ export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
 }
 
 /**
- * Fetch PageSpeed data from Google API
+ * Combine error messages from both audits
  */
-async function fetchPageSpeedData(
+function combinedErrors(mobileError: string | null, desktopError: string | null): string | null {
+  if (!mobileError && !desktopError) return null;
+  const errors: string[] = [];
+  if (mobileError) errors.push(`Mobile: ${mobileError}`);
+  if (desktopError) errors.push(`Desktop: ${desktopError}`);
+  return errors.join(" | ");
+}
+
+/**
+ * Fetch PageSpeed data from Google API with retry logic
+ * NO TIMEOUT - let API complete naturally
+ * Retries once on server errors or missing data
+ */
+async function fetchPageSpeedDataWithRetry(
   url: string,
   strategy: "mobile" | "desktop",
-  apiKey: string
+  apiKey: string,
+  attempt: number = 0
 ): Promise<unknown> {
+  const MAX_RETRIES = 1;
+  
+  console.log(`[AuditEngine] ${strategy} request (attempt ${attempt + 1}) for: ${url}`);
+  
   const apiUrl = new URL(PAGESPEED_API_URL);
   apiUrl.searchParams.append("key", apiKey);
   apiUrl.searchParams.append("url", url);
@@ -157,30 +165,48 @@ async function fetchPageSpeedData(
   apiUrl.searchParams.append("category", "accessibility");
   apiUrl.searchParams.append("category", "best-practices");
 
-  const response = await fetch(apiUrl.toString());
+  try {
+    const response = await fetch(apiUrl.toString());
 
-  if (!response.ok) {
-    let errorBody = "No error body";
-    try {
-      const errorData = await response.json();
-      errorBody = JSON.stringify(errorData);
-      console.error("[AuditEngine] Google API ERROR:", { status: response.status, error: errorBody, url, strategy });
-      auditLogger.scanFailed("AuditEngine", url, { status: response.status, error: errorBody });
-    } catch {
-      errorBody = await response.text();
-      console.error("[AuditEngine] Google API ERROR (text):", { status: response.status, error: errorBody, url, strategy });
-      auditLogger.scanFailed("AuditEngine", url, { status: response.status, error: errorBody });
+    if (!response.ok) {
+      let errorBody = "No error body";
+      try {
+        errorBody = await response.text();
+        console.error(`[AuditEngine] ${strategy} HTTP ${response.status} error:`, errorBody.substring(0, 500));
+      } catch {
+        // Ignore text parsing errors
+      }
+      
+      // Retry on server errors (5xx) but NOT on client errors (4xx)
+      if (attempt < MAX_RETRIES && response.status >= 500) {
+        console.log(`[AuditEngine] ${strategy} will retry after server error...`);
+        return fetchPageSpeedDataWithRetry(url, strategy, apiKey, attempt + 1);
+      }
+      
+      throw new Error(`PageSpeed API error: ${response.status} ${response.statusText}${errorBody ? " - " + errorBody.substring(0, 200) : ""}`);
     }
-    throw new Error(`PageSpeed API error: ${response.status} ${response.statusText} - ${errorBody}`);
+
+    const data = await response.json();
+
+    if (!isValidPageSpeedResponse(data)) {
+      // Retry if no valid lighthouse data on first attempt
+      if (attempt < MAX_RETRIES) {
+        console.log(`[AuditEngine] ${strategy} will retry after missing lighthouse data...`);
+        return fetchPageSpeedDataWithRetry(url, strategy, apiKey, attempt + 1);
+      }
+      throw new Error("Invalid PageSpeed API response structure");
+    }
+
+    console.log(`[AuditEngine] ${strategy} success`);
+    return data.lighthouseResult;
+  } catch (error) {
+    // Retry on network errors (not HTTP errors which are already handled)
+    if (attempt < MAX_RETRIES && !(error instanceof Error && error.message.includes("HTTP"))) {
+      console.log(`[AuditEngine] ${strategy} will retry after network error...`);
+      return fetchPageSpeedDataWithRetry(url, strategy, apiKey, attempt + 1);
+    }
+    throw error;
   }
-
-  const data = await response.json();
-
-  if (!isValidPageSpeedResponse(data)) {
-    throw new Error("Invalid PageSpeed API response structure");
-  }
-
-  return data.lighthouseResult;
 }
 
 /**
