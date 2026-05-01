@@ -361,16 +361,16 @@ export default function ScanSimulation(props: ScanSimulationProps) {
           return;
         }
 
-        if (!res.ok) {
-          const payload = (await res.json().catch(() => null)) as { error?: string; errorType?: string } | null;
-          const isHardFailure = payload?.errorType === "config_error" || res.status === 401 || res.status === 403;
-
+        // Always parse response - backend now returns 200 with structured error data
+        let data: AuditResponse;
+        try {
+          data = (await res.json()) as AuditResponse;
+        } catch {
+          // Only fail if we can't parse the response at all
           flowState = 'error';
           hasCompletedRef.current = true;
           setCurrentStage('error');
-          const errorMessage = isHardFailure
-            ? USER_ERROR_MESSAGES.config_error
-            : (payload?.error || "Analysis failed");
+          const errorMessage = "Invalid response from server";
           setError(errorMessage);
           setScanState('error');
           if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
@@ -379,28 +379,19 @@ export default function ScanSimulation(props: ScanSimulationProps) {
           return;
         }
 
-        const data = (await res.json()) as AuditResponse;
-
-        // Validate API response
+        // Validate API response structure
         if (!data || typeof data !== 'object') {
           throw new Error("Invalid API response");
         }
 
-        if (data.success === false) {
-          const errorMessage = data.error || "Analysis failed";
-          flowState = 'error';
-          hasCompletedRef.current = true;
-          setCurrentStage('error');
-          setScanState('error');
-          setError(errorMessage);
-          if (activeScanIdRef.current === scanId && callbacksRef.current.onError) {
-            callbacksRef.current.onError(errorMessage, scanId);
-          }
-          return;
-        }
+        // Check for complete failure (both mobile AND desktop null)
+        const hasMobile = data.mobile !== null && data.mobile !== undefined;
+        const hasDesktop = data.desktop !== null && data.desktop !== undefined;
+        const hasAnyData = hasMobile || hasDesktop;
 
-        if (data.errorType === "config_error") {
-          const errorMessage = USER_ERROR_MESSAGES.config_error;
+        // Only fail if we have NO data at all
+        if (!hasAnyData) {
+          const errorMessage = data.errors?.mobile || data.errors?.desktop || "Analysis failed - no data available";
           flowState = 'error';
           hasCompletedRef.current = true;
           setCurrentStage('error');

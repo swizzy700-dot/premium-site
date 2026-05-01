@@ -15,12 +15,17 @@ export type AuditErrorType = "config_error" | "scan_error" | "validation_error" 
  */
 export interface AuditResponse {
   success: boolean;
+  status?: "complete" | "partial_failure" | "failed";
   source: "pagespeed_insights" | null;
   desktop: DeviceAudit | null;
   mobile: DeviceAudit | null;
   error: string | null;
   errorType: AuditErrorType | null;
   scannedAt: string;
+  errors?: {
+    mobile?: string;
+    desktop?: string;
+  };
 }
 
 export interface DeviceAudit {

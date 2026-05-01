@@ -118,8 +118,14 @@ export default function WebsiteCheckerOnboardingModal(props: {
       error?: string;
     };
 
-    if (typedResult.success === false) {
-      setScanError(typedResult.error || 'Analysis failed');
+    // Check for partial data - show dashboard if at least one device succeeded
+    const hasDesktop = typedResult.desktop !== null && typedResult.desktop !== undefined;
+    const hasMobile = typedResult.mobile !== null && typedResult.mobile !== undefined;
+    const hasAnyData = hasDesktop || hasMobile;
+
+    // Only fail if we have NO data at all
+    if (!hasAnyData) {
+      setScanError(typedResult.error || 'Analysis failed - no data available');
       setStep(4);
       return;
     }
@@ -133,13 +139,7 @@ export default function WebsiteCheckerOnboardingModal(props: {
 
     setAudit(result as typeof audit);
     setScanError(null);
-
-    if (typedResult.desktop || typedResult.mobile) {
-      setStep(4);
-    } else {
-      setScanError('Analysis completed but no data was returned.');
-      setStep(4);
-    }
+    setStep(4);
   }, []);
 
   const handleScanError = useCallback((error: string) => {
@@ -213,7 +213,7 @@ export default function WebsiteCheckerOnboardingModal(props: {
     mobile: { performance: number; seo: number; accessibility: number; bestPractices: number; lhr: object } | null;
   }) {
     try {
-      if (!result || typeof result !== 'object' || !result.success) {
+      if (!result || typeof result !== 'object') {
         setScanError('Invalid analysis data received.');
         setIsScanning(false);
         setStep(4);
@@ -227,8 +227,13 @@ export default function WebsiteCheckerOnboardingModal(props: {
         return;
       }
 
-      if (!result.desktop || !result.mobile) {
-        setScanError('Incomplete analysis data received.');
+      // Check for partial data - accept if at least one device has data
+      const hasDesktop = result.desktop !== null && result.desktop !== undefined;
+      const hasMobile = result.mobile !== null && result.mobile !== undefined;
+      const hasAnyData = hasDesktop || hasMobile;
+
+      if (!hasAnyData) {
+        setScanError('Analysis failed - no data available.');
         setIsScanning(false);
         setStep(4);
         return;

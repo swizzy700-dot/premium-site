@@ -175,7 +175,8 @@ export function analyzeBusinessImpact(
   const secondary = desktop || mobile;
 
   if (!primary) {
-    throw new Error("No audit data available for analysis");
+    // Return safe fallback analysis instead of crashing
+    return createFallbackAnalysis(url);
   }
 
   return {
@@ -822,4 +823,107 @@ function calculateROI(
   const totalItems = quickWins.length + shortTerm.length + strategic.length;
   if (totalItems === 0) return "N/A - No fixes required";
   return "300-500% within 6 months";
+}
+
+/**
+ * Safe fallback analysis when no audit data is available
+ * NEVER crashes - always returns valid BusinessAnalysis
+ */
+function createFallbackAnalysis(url: string): BusinessAnalysis {
+  const domain = new URL(url).hostname.replace(/^www\./, "");
+  
+  return {
+    executiveSummary: {
+      headline: `${domain} analysis temporarily unavailable`,
+      subheadline: "We couldn't retrieve performance data at this time",
+      overallGrade: "N/A",
+      criticalIssues: 0,
+      opportunities: 0,
+      estimatedImpact: "Analysis unavailable",
+      keyTakeaway: "Please try again in a few moments",
+    },
+    performanceAnalysis: {
+      speed: {
+        score: 0,
+        grade: "N/A",
+        status: "poor",
+        businessMeaning: "Performance data unavailable",
+        userImpact: "Unable to assess user impact",
+        revenueImpact: "Unable to assess revenue impact",
+        topIssues: [],
+      },
+      seo: {
+        score: 0,
+        grade: "N/A",
+        status: "poor",
+        businessMeaning: "SEO data unavailable",
+        userImpact: "Unable to assess user impact",
+        revenueImpact: "Unable to assess revenue impact",
+        topIssues: [],
+      },
+      accessibility: {
+        score: 0,
+        grade: "N/A",
+        status: "poor",
+        businessMeaning: "Accessibility data unavailable",
+        userImpact: "Unable to assess user impact",
+        revenueImpact: "Unable to assess revenue impact",
+        topIssues: [],
+      },
+      bestPractices: {
+        score: 0,
+        grade: "N/A",
+        status: "poor",
+        businessMeaning: "Best practices data unavailable",
+        userImpact: "Unable to assess user impact",
+        revenueImpact: "Unable to assess revenue impact",
+        topIssues: [],
+      },
+      mobileExperience: {
+        score: 0,
+        vsDesktop: "similar",
+        businessCritical: true,
+        mobileRevenueRisk: "Unable to assess - data unavailable",
+        keyProblems: ["Mobile analysis failed"],
+      },
+    },
+    businessImpact: {
+      conversionRisk: {
+        level: "medium",
+        explanation: "Unable to assess conversion risk - analysis incomplete",
+      },
+      seoVisibilityRisk: {
+        level: "medium",
+        explanation: "Unable to assess SEO risk - analysis incomplete",
+      },
+      userExperienceRisk: {
+        level: "medium",
+        explanation: "Unable to assess UX risk - analysis incomplete",
+      },
+      mobileRevenueRisk: {
+        level: "medium",
+        explanation: "Unable to assess mobile risk - analysis incomplete",
+      },
+      overallRiskLevel: "moderate",
+      opportunitySummary: "Analysis temporarily unavailable - please retry",
+    },
+    fixRoadmap: {
+      quickWins: [],
+      shortTerm: [],
+      strategic: [],
+      estimatedTimeline: "Unable to estimate",
+      totalInvestmentEstimate: "Unable to estimate",
+      expectedROI: "Unable to calculate",
+    },
+    competitiveContext: {
+      performancePercentile: "Unable to determine",
+      vsIndustryAverage: "at",
+      mobileRanking: "Unable to determine",
+      seoCompetitiveness: "Unable to determine",
+      competitiveAdvantage: [],
+      competitiveGaps: ["Analysis data unavailable"],
+    },
+    generatedAt: new Date().toISOString(),
+    url,
+  };
 }
