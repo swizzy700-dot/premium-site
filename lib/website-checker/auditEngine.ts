@@ -1,13 +1,13 @@
 /**
- * Unified Website Audit Engine
+ * Unified Website Audit Engine - PRODUCTION STABLE
  * SINGLE SOURCE OF TRUTH for all PageSpeed Insights audits
  * 
- * RULES:
+ * PRINCIPLES:
  * - ONLY uses Google PageSpeed Insights API
  * - NEVER generates fake/simulated data
- * - STRICT error classification
+ * - NEVER throws - always returns safe results
  * - ALWAYS returns complete AuditResponse (never undefined fields)
- * - NO TIMEOUTS - let API complete naturally
+ * - TIMEOUT handling with graceful degradation (25s mobile, 30s desktop)
  * - SEQUENTIAL execution: mobile first, then desktop
  * - RETRY logic: 1 retry max on failure
  * - PARTIAL results: return whatever succeeds
@@ -30,11 +30,19 @@ import { auditLogger } from "@/lib/logger";
 
 // Configuration
 const PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
+const MOBILE_TIMEOUT_MS = 25000; // 25s for mobile
+const DESKTOP_TIMEOUT_MS = 30000; // 30s for desktop
+
+// Result type for safe returns (never throws)
+interface FetchResult {
+  success: boolean;
+  data: unknown | null;
+  error: string | null;
+}
 
 /**
  * Main entry point: Run complete audit for a URL
- * Returns unified AuditResponse with strict data contract
- * SEQUENTIAL execution: mobile first, then desktop
+ * PRODUCTION-STABLE: Never throws, always returns AuditResponse
  */
 export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
   const scannedAt = new Date().toISOString();
@@ -65,34 +73,36 @@ export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
     const normalizedUrl = normalizeUrl(url);
 
     // SEQUENTIAL execution: mobile FIRST, then desktop
-    // This ensures we get mobile data quickly without waiting for both
+    // Each runs independently - failure of one doesn't affect the other
     let mobile: DeviceAudit | null = null;
     let desktop: DeviceAudit | null = null;
     let mobileError: string | null = null;
     let desktopError: string | null = null;
 
-    // Run mobile FIRST
+    // Run mobile FIRST with timeout protection
     console.log("[AuditEngine] Starting mobile audit...");
-    try {
-      const mobileData = await fetchPageSpeedDataWithRetry(normalizedUrl, "mobile", apiKey.trim());
-      mobile = processPageSpeedData(mobileData);
+    const mobileResult = await fetchPageSpeedDataSafe(normalizedUrl, "mobile", apiKey.trim(), MOBILE_TIMEOUT_MS);
+    
+    if (mobileResult.success && mobileResult.data) {
+      mobile = processPageSpeedData(mobileResult.data);
       console.log(`[AuditEngine] Mobile audit success: ${mobile ? "valid data" : "no data"}`);
-    } catch (error) {
-      mobileError = error instanceof Error ? error.message : "Mobile audit failed";
+    } else {
+      mobileError = mobileResult.error || "Mobile audit failed";
       console.error("[AuditEngine] Mobile scan FAILED:", mobileError);
-      auditLogger.scanFailed("AuditEngine", url, error);
+      auditLogger.scanFailed("AuditEngine", url, mobileError);
     }
 
-    // Then run desktop AFTER mobile completes
+    // Then run desktop AFTER mobile completes (completely independent)
     console.log("[AuditEngine] Starting desktop audit...");
-    try {
-      const desktopData = await fetchPageSpeedDataWithRetry(normalizedUrl, "desktop", apiKey.trim());
-      desktop = processPageSpeedData(desktopData);
+    const desktopResult = await fetchPageSpeedDataSafe(normalizedUrl, "desktop", apiKey.trim(), DESKTOP_TIMEOUT_MS);
+    
+    if (desktopResult.success && desktopResult.data) {
+      desktop = processPageSpeedData(desktopResult.data);
       console.log(`[AuditEngine] Desktop audit success: ${desktop ? "valid data" : "no data"}`);
-    } catch (error) {
-      desktopError = error instanceof Error ? error.message : "Desktop audit failed";
+    } else {
+      desktopError = desktopResult.error || "Desktop audit failed";
       console.error("[AuditEngine] Desktop scan FAILED:", desktopError);
-      auditLogger.scanFailed("AuditEngine", url, error);
+      auditLogger.scanFailed("AuditEngine", url, desktopError);
     }
 
     // Check if at least one succeeded
@@ -100,30 +110,33 @@ export async function runWebsiteAudit(url: string): Promise<AuditResponse> {
     const hasDesktop = desktop !== null;
     const hasValidData = hasMobile || hasDesktop;
 
-    if (!hasValidData) {
-      console.error("[AuditEngine] NO VALID DATA from either desktop or mobile scan");
-      const combinedError = [mobileError, desktopError].filter(Boolean).join(" | ");
-      return createErrorResponse(
-        combinedError || ERROR_MESSAGES.scan_error,
-        "scan_error",
-        scannedAt
-      );
+    // ALWAYS return success if we have ANY data (partial is better than nothing)
+    if (hasValidData) {
+      return {
+        success: true,
+        source: "pagespeed_insights",
+        desktop,
+        mobile,
+        error: combinedErrors(mobileError, desktopError),
+        errorType: (!hasMobile || !hasDesktop) ? "scan_error" : null,
+        scannedAt,
+      };
     }
 
-    // Return response with partial support
-    return {
-      success: true,
-      source: "pagespeed_insights",
-      desktop,
-      mobile,
-      error: combinedErrors(mobileError, desktopError),
-      errorType: (!hasMobile || !hasDesktop) ? "scan_error" : null,
-      scannedAt,
-    };
+    // Only return failure if BOTH failed
+    console.error("[AuditEngine] NO VALID DATA from either desktop or mobile scan");
+    const combinedError = [mobileError, desktopError].filter(Boolean).join(" | ");
+    return createErrorResponse(
+      combinedError || ERROR_MESSAGES.scan_error,
+      "scan_error",
+      scannedAt
+    );
   } catch (error) {
+    // Ultimate safety net - should never reach here but just in case
+    const errorMsg = error instanceof Error ? error.message : "Unknown error";
     auditLogger.crash("AuditEngine", error);
     return createErrorResponse(
-      ERROR_MESSAGES.unknown,
+      errorMsg || ERROR_MESSAGES.unknown,
       "unknown",
       scannedAt
     );
@@ -142,16 +155,17 @@ function combinedErrors(mobileError: string | null, desktopError: string | null)
 }
 
 /**
- * Fetch PageSpeed data from Google API with retry logic
- * NO TIMEOUT - let API complete naturally
- * Retries once on server errors or missing data
+ * Fetch PageSpeed data from Google API - SAFE VERSION
+ * NEVER THROWS - always returns FetchResult
+ * Handles timeouts, retries, and all errors gracefully
  */
-async function fetchPageSpeedDataWithRetry(
+async function fetchPageSpeedDataSafe(
   url: string,
   strategy: "mobile" | "desktop",
   apiKey: string,
+  timeoutMs: number,
   attempt: number = 0
-): Promise<unknown> {
+): Promise<FetchResult> {
   const MAX_RETRIES = 1;
   
   console.log(`[AuditEngine] ${strategy} request (attempt ${attempt + 1}) for: ${url}`);
@@ -165,47 +179,75 @@ async function fetchPageSpeedDataWithRetry(
   apiUrl.searchParams.append("category", "accessibility");
   apiUrl.searchParams.append("category", "best-practices");
 
-  try {
-    const response = await fetch(apiUrl.toString());
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+  try {
+    const response = await fetch(apiUrl.toString(), {
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    // Handle HTTP errors safely
     if (!response.ok) {
-      let errorBody = "No error body";
+      let errorBody = "";
       try {
         errorBody = await response.text();
-        console.error(`[AuditEngine] ${strategy} HTTP ${response.status} error:`, errorBody.substring(0, 500));
       } catch {
         // Ignore text parsing errors
       }
       
-      // Retry on server errors (5xx) but NOT on client errors (4xx)
+      const errorMsg = `PageSpeed API error: ${response.status}${errorBody ? " - " + errorBody.substring(0, 200) : ""}`;
+      console.error(`[AuditEngine] ${strategy} HTTP ${response.status} error`);
+      
+      // Retry on server errors (5xx)
       if (attempt < MAX_RETRIES && response.status >= 500) {
         console.log(`[AuditEngine] ${strategy} will retry after server error...`);
-        return fetchPageSpeedDataWithRetry(url, strategy, apiKey, attempt + 1);
+        return fetchPageSpeedDataSafe(url, strategy, apiKey, timeoutMs, attempt + 1);
       }
       
-      throw new Error(`PageSpeed API error: ${response.status} ${response.statusText}${errorBody ? " - " + errorBody.substring(0, 200) : ""}`);
+      return { success: false, data: null, error: errorMsg };
     }
 
-    const data = await response.json();
+    // Safe JSON parsing
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      console.error(`[AuditEngine] ${strategy} JSON parse error:`, jsonError);
+      return { success: false, data: null, error: "Invalid JSON response from API" };
+    }
 
+    // Validate response structure
     if (!isValidPageSpeedResponse(data)) {
-      // Retry if no valid lighthouse data on first attempt
       if (attempt < MAX_RETRIES) {
         console.log(`[AuditEngine] ${strategy} will retry after missing lighthouse data...`);
-        return fetchPageSpeedDataWithRetry(url, strategy, apiKey, attempt + 1);
+        return fetchPageSpeedDataSafe(url, strategy, apiKey, timeoutMs, attempt + 1);
       }
-      throw new Error("Invalid PageSpeed API response structure");
+      return { success: false, data: null, error: "Invalid PageSpeed API response structure" };
     }
 
     console.log(`[AuditEngine] ${strategy} success`);
-    return data.lighthouseResult;
+    return { success: true, data: (data as Record<string, unknown>).lighthouseResult, error: null };
+
   } catch (error) {
-    // Retry on network errors (not HTTP errors which are already handled)
-    if (attempt < MAX_RETRIES && !(error instanceof Error && error.message.includes("HTTP"))) {
-      console.log(`[AuditEngine] ${strategy} will retry after network error...`);
-      return fetchPageSpeedDataWithRetry(url, strategy, apiKey, attempt + 1);
+    clearTimeout(timeoutId);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    
+    console.error(`[AuditEngine] ${strategy} ${isTimeout ? "timeout" : "error"}:`, errorMessage);
+    
+    // Retry on timeout or network errors
+    if (attempt < MAX_RETRIES) {
+      console.log(`[AuditEngine] ${strategy} will retry after ${isTimeout ? "timeout" : "error"}...`);
+      return fetchPageSpeedDataSafe(url, strategy, apiKey, timeoutMs, attempt + 1);
     }
-    throw error;
+    
+    return { 
+      success: false, 
+      data: null, 
+      error: isTimeout ? `Timeout after ${timeoutMs}ms` : errorMessage 
+    };
   }
 }
 
