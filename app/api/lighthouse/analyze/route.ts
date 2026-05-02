@@ -5,6 +5,7 @@ import { isValidAuditResponse, ERROR_MESSAGES, type AuditResponse } from "@/lib/
 import { auditLogger } from "@/lib/logger";
 
 export const runtime = "nodejs";
+export const dynamic = 'force-dynamic';
 
 export interface AnalysisResponse {
   success: boolean;

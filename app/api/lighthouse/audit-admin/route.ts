@@ -4,6 +4,7 @@ import { parseLhrForClient } from "@/lib/website-checker/lighthouse/parseLightho
 import { interpretLighthouse } from "@/lib/website-checker/lighthouse/interpretLighthouse";
 
 export const runtime = "nodejs";
+export const dynamic = 'force-dynamic';
 
 function getAdminKeyFromHeader(req: Request) {
   return req.headers.get("x-admin-key") || req.headers.get("X-ADMIN-KEY");
