@@ -1,0 +1,352 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION LAYER
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String    // hashed password
+  name          String?
+  avatar        String?   // avatar URL
+  
+  // Status & Onboarding
+  isActive      Boolean   @default(true)
+  emailVerified Boolean   @default(false)
+  onboardingCompleted Boolean @default(false)
+  
+  // Relations
+  memberships   WorkspaceMember[]
+  ownedWorkspaces Workspace[]
+  sessions      Session[]
+  
+  // Metadata
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  @@index([email])
+  @@index([isActive])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  token        String   @unique
+  expiresAt    DateTime
+  
+  // Device info for security
+  ipAddress    String?
+  userAgent    String?
+  
+  createdAt    DateTime @default(now())
+  
+  @@index([token])
+  @@index([userId])
+}
+
+// ============================================
+// WORKSPACE & MULTI-TENANT LAYER
+// ============================================
+
+model Workspace {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique // URL-friendly identifier
+  
+  // Branding
+  logo        String?
+  description String?
+  
+  // Settings
+  settings    String?   // JSON blob for workspace settings
+  
+  // Ownership
+  ownerId     String
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  members     WorkspaceMember[]
+  projects    Project[]
+  audits      Audit[]
+  usageRecords UsageRecord[]
+  subscriptions Subscription?
+  apiKeys     ApiKey[]
+  
+  // Metadata
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([slug])
+  @@index([ownerId])
+}
+
+model WorkspaceMember {
+  id          String          @id @default(cuid())
+  
+  workspaceId String
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // WorkspaceRole as String: OWNER, ADMIN, MEMBER, VIEWER
+  role        String          @default("MEMBER")
+  
+  // Metadata
+  invitedAt   DateTime        @default(now())
+  joinedAt    DateTime?
+  
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+// ============================================
+// PROJECT LAYER
+// ============================================
+
+model Project {
+  id          String    @id @default(cuid())
+  
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  name        String
+  slug        String    // URL-friendly identifier
+  
+  // Configuration
+  baseUrl     String    // primary URL for this project
+  settings    String?   // JSON: crawl settings, notification preferences, etc.
+  
+  // Relations
+  audits      Audit[]
+  schedules   ScheduledAudit[]
+  
+  // Metadata
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastAuditAt DateTime?
+  
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+  @@index([baseUrl])
+}
+
+model ScheduledAudit {
+  id          String    @id @default(cuid())
+  
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Schedule config
+  // AuditFrequency as String: DAILY, WEEKLY, BIWEEKLY, MONTHLY
+  frequency   String    @default("WEEKLY")
+  dayOfWeek   Int?      // 0-6 for weekly
+  hour        Int       // 0-23
+  timezone    String    @default("UTC")
+  
+  // Status
+  isActive    Boolean   @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([projectId])
+  @@index([nextRunAt])
+  @@index([isActive])
+}
+
+// ============================================
+// AUDIT ENGINE LAYER
+// ============================================
+
+model Audit {
+  id          String    @id @default(cuid())
+  
+  // Tenant Context
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  
+  // Target
+  url         String
+  
+  // Execution State
+  // AuditStatus as String: QUEUED, PROCESSING, COMPLETED, PARTIAL, FAILED, CANCELLED
+  status      String    @default("QUEUED")
+  jobId       String?   // BullMQ job ID
+  
+  // Scores (0-100)
+  performanceScore     Int?
+  seoScore            Int?
+  accessibilityScore  Int?
+  bestPracticesScore  Int?
+  overallScore        Int?
+  grade               String?   // A-F grade
+  
+  // Intelligence Analysis (structured)
+  // RiskLevel as String: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN
+  riskLevel           String    @default("UNKNOWN")
+  businessImpact      String?   // JSON array
+  technicalIssues     String?   // JSON array
+  conversionBlockers  String?   // JSON array
+  priorityFixes       String?   // JSON array
+  
+  // Raw Data (Lighthouse JSON)
+  lighthouseDataMobile  String?   // Mobile audit
+  lighthouseDataDesktop String?   // Desktop audit
+  
+  // Summary Data (for quick display)
+  summaryData   String?   // JSON: core metrics, quick insights
+  
+  // Error Handling
+  error         String?
+  errorCode     String?
+  retryCount    Int       @default(0)
+  
+  // Execution Metrics
+  queuedAt      DateTime  @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+  executionTime Int?      // milliseconds
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Credit tracking
+  creditsUsed   Int       @default(1) // mobile + desktop = 2
+  
+  // Caching
+  cacheKey      String?
+  cacheValid    Boolean   @default(false)
+  
+  // Report generation
+  reportUrl     String?   // PDF report path
+  
+  // Relations
+  usageRecords  UsageRecord[]
+  
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([url])
+  @@index([status])
+  @@index([queuedAt])
+  @@index([cacheKey])
+  @@index([completedAt])
+}
+
+// ============================================
+// USAGE & BILLING LAYER
+// ============================================
+
+model UsageRecord {
+  id          String    @id @default(cuid())
+  
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  auditId     String?
+  audit       Audit?    @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  
+  // Usage details
+  // ResourceType as String: AUDIT_MOBILE, AUDIT_DESKTOP, AUDIT_COMBINED, API_CALL, REPORT_GENERATION, EXPORT
+  resource    String
+  credits     Int       // credits consumed (positive) or restored (negative)
+  
+  // Billing period tracking
+  periodStart DateTime
+  periodEnd   DateTime
+  
+  description String?   // human-readable context
+  
+  createdAt   DateTime  @default(now())
+  
+  @@index([workspaceId])
+  @@index([periodStart])
+  @@index([resource])
+}
+
+model Subscription {
+  id          String    @id @default(cuid())
+  
+  workspaceId String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  // Plan
+  // PlanType as String: FREE, STARTER, PRO, AGENCY, ENTERPRISE
+  plan        String    @default("FREE")
+  
+  // Billing status
+  // SubscriptionStatus as String: ACTIVE, CANCELLED, PAST_DUE, UNPAID, TRIALING
+  status      String    @default("ACTIVE")
+  
+  // Usage tracking
+  monthlyCredits     Int       // credits allocated per month
+  creditsUsed        Int       @default(0)
+  creditsResetAt     DateTime? // when credits reset
+  
+  // Billing
+  stripeCustomerId   String?
+  stripeSubscriptionId String?
+  stripePriceId      String?
+  
+  // Metadata
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean   @default(false)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([workspaceId])
+  @@index([status])
+}
+
+// ============================================
+// API ACCESS LAYER
+// ============================================
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  
+  name        String    // descriptive name
+  keyHash     String    // hashed API key
+  keyPrefix   String    // first 8 chars for identification
+  
+  // Permissions
+  permissions String    // JSON: array of allowed endpoints/actions
+  
+  // Usage tracking
+  lastUsedAt  DateTime?
+  usageCount  Int       @default(0)
+  
+  // Status
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  
+  createdAt   DateTime  @default(now())
+  createdBy   String    // user ID who created it
+  
+  @@index([workspaceId])
+  @@index([keyHash])
+  @@index([isActive])
+}
