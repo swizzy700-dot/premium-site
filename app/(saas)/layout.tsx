@@ -5,11 +5,11 @@
 
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { DashboardHeader } from '@/components/dashboard/Header';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 async function getSessionUser() {
   const cookieStore = await cookies();

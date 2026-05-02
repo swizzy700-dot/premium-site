@@ -3,13 +3,13 @@
  * Overview of workspace activity and metrics
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { Activity, Clock, TrendingUp, AlertCircle } from 'lucide-react';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 async function getDashboardData() {
   const cookieStore = await cookies();

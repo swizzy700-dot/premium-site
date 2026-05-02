@@ -3,7 +3,7 @@
  * Multi-tenant subscription management and usage tracking
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './prisma';
 
 // Type definitions until Prisma generates
 type PlanType = 'FREE' | 'STARTER' | 'PRO' | 'AGENCY' | 'ENTERPRISE';
@@ -21,7 +21,7 @@ type Subscription = {
 };
 import { logger } from '@/utils/logger';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 // Credit allocation per plan
 const PLAN_CREDITS: Record<PlanType, number> = {

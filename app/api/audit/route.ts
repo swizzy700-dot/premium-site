@@ -2,7 +2,7 @@
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { auditQueue, AuditJob } from '@/lib/queue.service';
 import { logger } from '@/utils/logger';
 import { AuditError, ErrorCodes, handleError } from '@/utils/errorHandler';
@@ -19,7 +19,7 @@ import {
   sanitizeError
 } from '@/lib/security';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 // Clean old rate limit entries every 5 minutes
 setInterval(() => {

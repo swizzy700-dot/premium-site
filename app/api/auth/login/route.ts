@@ -4,11 +4,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 export async function POST(request: NextRequest) {
   try {

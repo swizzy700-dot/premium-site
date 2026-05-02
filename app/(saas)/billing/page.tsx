@@ -3,12 +3,12 @@
  * Credit tracking and plan management
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { CreditCard, Zap, Check } from 'lucide-react';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 const PLANS = [
   {

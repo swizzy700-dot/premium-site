@@ -3,9 +3,9 @@
  * Multi-tenant isolation layer for all SaaS operations
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './prisma';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 export interface WorkspaceContext {
   workspaceId: string;

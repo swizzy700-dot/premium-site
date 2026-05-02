@@ -1,5 +1,8 @@
 import { Queue, Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
+import { prisma } from './prisma';
+import { aiService } from './ai.service';
+import { analyzeIntelligence, IntelligenceAnalysis } from './intelligence.engine';
 import { logger } from '../utils/logger';
 import { AuditError, ErrorCodes } from '../utils/errorHandler';
 import { puppeteerService } from './puppeteer.service';
@@ -50,9 +53,6 @@ const lighthouseWorker = {
     };
   }
 };
-import { aiService } from './ai.service';
-import { analyzeIntelligence, IntelligenceAnalysis } from './intelligence.engine';
-import { PrismaClient } from '@prisma/client';
 
 export interface AuditJob {
   url: string;
@@ -93,8 +93,7 @@ export interface AuditResult {
   executionTime?: number;
 }
 
-// Prisma client
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 // Lazy-loaded Redis connection (only created when needed)
 let redisConnection: IORedis | null = null;

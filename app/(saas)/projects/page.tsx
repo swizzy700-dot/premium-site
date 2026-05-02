@@ -3,13 +3,13 @@
  * Manage workspace projects
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { FolderKanban, Plus, Globe, Clock, TrendingUp } from 'lucide-react';
 
-const prisma = new PrismaClient();
+// Prisma client (singleton from lib/prisma)
 
 async function getProjects() {
   const cookieStore = await cookies();
