@@ -8,6 +8,7 @@ import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { DashboardSidebar } from '@/components/dashboard/Sidebar';
 import { DashboardHeader } from '@/components/dashboard/Header';
+import { BetaBanner } from '@/components/beta/BetaBanner';
 
 // Prisma client (singleton from lib/prisma)
 
@@ -40,6 +41,7 @@ export default async function SaaSLayout({
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <BetaBanner />
       <DashboardHeader user={user} />
       <div className="flex">
         <DashboardSidebar />

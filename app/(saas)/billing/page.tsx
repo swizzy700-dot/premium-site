@@ -114,7 +114,22 @@ export default async function BillingPage() {
   const { workspace, subscription, usage, recentUsage } = data;
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-7xl mx-auto space-y-8">
+      {/* Beta Access Notice */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <h3 className="font-medium text-blue-900">Beta Access</h3>
+            <p className="text-sm text-blue-700 mt-1">
+              Beta access is currently free. All features are temporarily unlocked for exploration. 
+              Paid plans will launch soon.
+            </p>
+          </div>
+        </div>
+      </div>
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Billing & Usage</h1>
@@ -253,17 +268,17 @@ function PlanCard({ plan }: { plan: typeof PLANS[0] }) {
           ))}
         </ul>
 
+        {/* Beta: All upgrade buttons disabled */}
         <button
           className={`w-full mt-6 py-2 px-4 rounded-lg font-medium transition-colors ${
             plan.current
               ? 'bg-slate-100 text-slate-600 cursor-default'
-              : plan.popular
-              ? 'bg-blue-600 hover:bg-blue-700 text-white'
-              : 'bg-slate-100 hover:bg-slate-200 text-slate-900'
+              : 'bg-slate-100 text-slate-500 cursor-not-allowed'
           }`}
-          disabled={plan.current}
+          disabled={true}
+          title="Payments launching soon"
         >
-          {plan.cta}
+          {plan.current ? plan.cta : 'Coming Soon'}
         </button>
       </div>
     </div>

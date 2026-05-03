@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export default function WebsiteCheckerNav() {
   return (
-    <div className="fixed top-0 inset-x-0 z-[95]">
+    <div className="sticky top-0 z-40">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mt-3 rounded-2xl border border-neutral-200 bg-white/70 backdrop-blur-xl shadow-[0_20px_60px_rgba(2,6,23,0.10)]">
           <div className="flex items-center justify-between gap-4 px-4 py-3">

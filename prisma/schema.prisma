@@ -350,3 +350,17 @@ model ApiKey {
   @@index([keyHash])
   @@index([isActive])
 }
+
+// Early access waitlist for pre-launch marketing
+model Waitlist {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+}

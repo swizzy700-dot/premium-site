@@ -207,11 +207,12 @@ export default async function DashboardPage() {
                 />
               </div>
             </div>
+            {/* Beta: Link to billing page for plan info */}
             <Link
               href="/billing"
               className="mt-4 block text-center bg-white/10 hover:bg-white/20 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
             >
-              Upgrade Plan
+              View Plans
             </Link>
           </div>
 
