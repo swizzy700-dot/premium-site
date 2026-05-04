@@ -6,6 +6,7 @@ import { Search, User, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 
 export function Header() {
+  
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -16,12 +17,16 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">WI</span>
-            </div>
-            <span className="font-semibold text-slate-900 hidden sm:block">WebIntel</span>
-          </Link>
+          {pathname.startsWith("/services") && (
+  <Link href="/website-checker" className="flex items-center gap-2">
+    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+      <span className="text-white font-bold text-sm">WI</span>
+    </div>
+    <span className="font-semibold text-slate-900 hidden sm:block">
+      WebIntel
+    </span>
+  </Link>
+)}
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8">

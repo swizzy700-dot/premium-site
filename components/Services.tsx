@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { getServicePreviews } from '@/lib/services';
-
+import { Header } from "@/components/layout/Header";
 export default function Services() {
   const servicePreviews = getServicePreviews();
+
+  <p className="text-red-500">TEST WEBINTEL HERE</p>
 
   return (
     <section className="relative bg-white py-24 sm:py-32">
@@ -22,6 +24,19 @@ export default function Services() {
         </div>
 
         <div className="space-y-6">
+          <div className="mb-6 flex items-center justify-between">
+  <p className="text-sm text-neutral-500 tracking-wide">
+    Powered by WebIntel Website Intelligence
+  </p>
+
+  <Link
+    href="/website-checker"
+    className="text-sm text-amber-500 hover:text-amber-400 transition"
+  >
+    Run Website Check →
+  </Link>
+</div>
+
           {servicePreviews.map((service, index) => (
             <Link
               key={service.id}

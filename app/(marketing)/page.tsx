@@ -5,6 +5,7 @@ import Testimonials from '@/components/Testimonials';
 import AuthorityHub from '@/components/AuthorityHub';
 import CallToAction from '@/components/CallToAction';
 import Contact from '@/components/Contact';
+import { Header } from "@/components/layout/Header";
 
 export default function Home() {
   return (

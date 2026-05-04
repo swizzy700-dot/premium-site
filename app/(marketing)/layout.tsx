@@ -1,6 +1,4 @@
-import { Header } from "@/components/layout/Header";
-
-
+import Navbar from "@/components/Navbar";
 export default function MarketingLayout({
   children,
 }: {
@@ -9,7 +7,7 @@ export default function MarketingLayout({
 
 return (
   <>
-    <Header />
+    <Navbar />
     <main className="pt-16">{children}</main>
   </>
 );
