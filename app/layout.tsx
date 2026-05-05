@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Footer from "@/components/Footer";
 
-
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -16,32 +15,34 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "WebIntel - AI-Powered Website Intelligence Platform",
-  description: "Professional website analysis, performance audits, and AI-driven insights to optimize your digital presence.",
+  description:
+    "Professional website analysis, performance audits, and AI-driven insights to optimize your digital presence.",
   icons: {
-    icon: "/logo.webp"
+    icon: "/logo.webp",
   },
 };
 
-
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-     <body className="min-h-full flex flex-col">
-  
+      <head>
+        <meta
+          name="google-site-verification"
+          content="H5N03fGg4juBfH83DLkV0_fUEKQ6WAxIDqCW5HzA_YM"
+        />
+      </head>
 
-  <div className="flex-1">
-    {children}
-  </div>
-
-  <Footer />
-</body>
+      <body className="min-h-full flex flex-col">
+        <div className="flex-1">{children}</div>
+        <Footer />
+      </body>
     </html>
   );
 }

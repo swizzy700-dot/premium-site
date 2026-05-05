@@ -15,7 +15,7 @@ interface AuditData {
     seo: number;
     overall: number;
   };
-  desktopScore: {
+  desktopScore : {
     performance: number;
     accessibility: number;
     bestPractices: number;
@@ -55,7 +55,7 @@ interface PremiumReportProps {
 export function PremiumReport({ data, onDownloadPDF, onEmailReport }: PremiumReportProps) {
   const [email, setEmail] = useState('');
   const [emailSent, setEmailSent] = useState(false);
-  const [activeDevice, setActiveDevice] = useState<'mobile' | 'desktop'>('mobile');
+  const [activeDevice, setActiveDevice] = useState<'mobile' | 'desktop'>('mobile'); 
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();

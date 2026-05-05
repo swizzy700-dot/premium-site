@@ -8,93 +8,109 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-
-    const email = body?.email;
-    const auditId = body?.auditId;
+    const { email, auditId } = body;
 
     if (!email || !auditId) {
       return NextResponse.json(
-        { error: 'Missing email or auditId' },
+        { error: 'Email and auditId are required' },
         { status: 400 }
       );
     }
 
-    console.log("Request received:", { email, auditId });
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: 'Invalid email format' },
+        { status: 400 }
+      );
+    }
 
-    // 1. Fetch audit (safe)
+    // Fetch the audit
     const audit = await prisma.audit.findUnique({
       where: { id: auditId },
-      include: { project: true },
+      include: {
+        project: true,
+      },
     });
 
     if (!audit) {
-      console.log("Audit not found");
       return NextResponse.json(
         { error: 'Audit not found' },
         { status: 404 }
       );
     }
 
-    // 2. Safe URL parsing
-    let domain = 'unknown';
-    try {
-      domain = new URL(audit.url).hostname;
-    } catch {
-      console.log("Invalid URL:", audit.url);
-    }
-
-    // 3. Score
+    // Get mobile score (primary)
     const mobileScore = {
-      overall: audit.overallScore ?? 0,
-      performance: audit.performanceScore ?? 0,
-      accessibility: audit.accessibilityScore ?? 0,
-      bestPractices: audit.bestPracticesScore ?? 0,
-      seo: audit.seoScore ?? 0,
+      overall: audit.overallScore || 0,
+      performance: audit.performanceScore || 0,
+      accessibility: audit.accessibilityScore || 0,
+      bestPractices: audit.bestPracticesScore || 0,
+      seo: audit.seoScore || 0,
     };
 
-    // 4. EMAIL (IMPORTANT: don't crash API if it fails)
-    try {
-      await sendAuditReportEmail({
-        to: email,
-        url: audit.url,
-        title: audit.project?.name || domain,
-        domain,
-        reportId: auditId,
-        mobileScore,
-        riskLevel: audit.riskLevel || 'UNKNOWN',
-        executiveSummary: audit.businessImpact || '',
-      });
-    } catch (emailError) {
-      console.log("Email failed:", emailError);
+    // Extract domain from URL
+    const url = audit.url;
+    const domain = new URL(url).hostname;
+
+    // Send email
+    const emailResult = await sendAuditReportEmail({
+      to: email,
+      url: url,
+      title: audit.project?.name || domain,
+      domain: domain,
+      reportId: auditId,
+      mobileScore,
+      riskLevel: audit.riskLevel || 'UNKNOWN',
+      executiveSummary: audit.businessImpact || 'Website analysis completed.',
+    });
+
+    if (!emailResult.success) {
+      return NextResponse.json(
+        { error: emailResult.error || 'Failed to send email' },
+        { status: 500 }
+      );
     }
 
-    // 5. Lead capture (safe)
+    // Capture lead for marketing
+    await captureLead({
+      email,
+      url: url,
+      source: 'report_email',
+      metadata: {
+        auditId,
+        score: mobileScore.overall,
+        domain,
+      },
+    });
+
+    // Store email in waitlist if not already there
     try {
-      await captureLead({
-        email,
-        url: audit.url,
-        source: 'report_email',
-        metadata: {
-          auditId,
-          score: mobileScore.overall,
-          domain,
+      await prisma.waitlist.upsert({
+        where: { email: email.toLowerCase() },
+        create: {
+          email: email.toLowerCase(),
+          status: 'PENDING',
         },
+        update: {},
       });
-    } catch (leadError) {
-      console.log("Lead capture failed:", leadError);
+    } catch (e) {
+      // Ignore errors - email was still sent
+      console.log('Waitlist entry creation skipped');
     }
 
     return NextResponse.json({
       success: true,
-      message: "Report processed successfully",
+      message: 'Report sent successfully',
+      messageId: emailResult.messageId,
     });
-
   } catch (error) {
-    console.error("API ERROR:", error);
-
+    console.error('Email report API error:', error);
     return NextResponse.json(
-      { error: 'Server crashed' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
 }
+
