@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description:
     "Professional website analysis, performance audits, and AI-driven insights to optimize your digital presence.",
   icons: {
-    icon: "/logo.webp",
+    icon: "/logo.png",
   },
 };
 

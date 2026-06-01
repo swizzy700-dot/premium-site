@@ -35,7 +35,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-20">
           <a href="#home" className="flex items-center gap-4">
             <Image
-              src="/logo.webp"
+              src="/logo.png"
               alt="Mainline Randy Logo"
               width={64}
               height={48}
