@@ -16,10 +16,10 @@ export default function Hero() {
                   ENGINEERED FOR PRESENCE. DESIGNED FOR GROWTH.
                 </p>
                 <h1 className="text-5xl sm:text-6xl lg:text-6xl font-serif font-light leading-[0.95] tracking-tight text-white">
-                  Uncover what&apos;s limiting your website performance.
+                  Your website should work as hard as you do. We design powerful digital experiences that attract visitors and win you customers.
                 </h1>
                 <p className="max-w-2xl text-xl sm:text-2xl text-amber-200 leading-relaxed font-light tracking-wide">
-                  Enter your website URL to reveal performance gaps, structural issues, and optimization opportunities that are costing you conversions.
+                  Is your website costing you customers? We fix that. We build fast, sharp, high-performing websites that leave a lasting impression and turn visitors into paying clients.
                 </p>
               </div>
 
