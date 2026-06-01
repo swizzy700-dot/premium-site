@@ -197,7 +197,7 @@ export default function LighthouseResultsDashboard(props: {
           <h3 className="text-lg font-medium text-neutral-950">Key Insights</h3>
           <div className="mt-4 text-sm text-neutral-700 leading-relaxed">
             <p className="mb-3">
-              Your website's <strong>{niceKeyLabel(underperformingKey)}</strong> performance is {underHeading} ({underScore}/100). 
+              Your website's <strong>{niceKeyLabel(underperformingKey)}</strong> efficiency is {underHeading} ({underScore}/100). 
               This area presents the biggest opportunity for improvement.
             </p>
             <p>
