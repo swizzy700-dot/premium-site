@@ -39,30 +39,38 @@ export async function runLighthouseAudit(params: { url: string }) {
   };
 
   const chrome = await chromeLauncher.launch({
-    // Headless Chrome flags for CI-like environments.
-    chromeFlags: [
-      "--headless=new",
-      "--disable-gpu",
-      "--no-sandbox",
-      "--disable-dev-shm-usage",
-    ],
-  });
+  chromeFlags: [
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--single-process",
+    "--no-zygote"
+  ],
+});
 
   try {
     const lighthouseRunner = lighthouse as unknown as (u: string, opts: Record<string, unknown>) => Promise<{
       lhr: unknown;
     }>;
 
-    const result = await lighthouseRunner(url, {
-      port: chrome.port,
-      output: "json",
-      logLevel: "error",
-      onlyCategories: ["performance", "seo", "accessibility", "best-practices"],
-      // Desktop-first for conversion UX; can be extended later.
-      emulatedFormFactor: "desktop",
-    });
+    const result = await Promise.race([
+  lighthouseRunner(url, {
+    port: chrome.port,
+    output: "json",
+    logLevel: "error",
+    onlyCategories: ["performance", "seo", "accessibility", "best-practices"],
+    emulatedFormFactor: "desktop",
+  }),
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Lighthouse timeout")), 45000)
+  )
+]) as { lhr: unknown };
 
     return result.lhr;
+    if (!result || !("lhr" in result)) {
+  throw new Error("Lighthouse failed to generate report");
+}
   } finally {
     await chrome.kill();
   }

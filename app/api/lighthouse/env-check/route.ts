@@ -16,7 +16,7 @@ export async function GET(): Promise<Response> {
     "VERCEL_API_TOKEN",
     "NEXT_PUBLIC_PAGESPEED_API_KEY",
     "pagespeed_api_key",
-    "GOOGLE_PAGESPEED_API_KEY",
+    
     "PAGESPEED_KEY",
   ];
 
