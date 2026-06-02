@@ -33,7 +33,7 @@ export const auditWorker = new Worker(
     }
   },
   {
-    connection: redisConnection,
+    connection: redisConnection as any,
     concurrency: 3, // Process 3 audits concurrently
   }
 );
