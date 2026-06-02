@@ -114,7 +114,7 @@ let auditQueueInstance: Queue | null = null;
 export function getAuditQueue(): Queue {
   if (!auditQueueInstance) {
     auditQueueInstance = new Queue('audit-queue', {
-      connection: getRedisConnection(),
+      connection: getRedisConnection() as any,
       defaultJobOptions: {
         attempts: 3,
         backoff: {

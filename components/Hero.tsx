@@ -16,7 +16,7 @@ export default function Hero() {
                   ENGINEERED FOR PRESENCE. DESIGNED FOR GROWTH.
                 </p>
                 <h1 className="text-5xl sm:text-6xl lg:text-6xl font-serif font-light leading-[0.95] tracking-tight text-white">
-                  Your website should work as hard as you do. We design powerful digital experiences that attract visitors and win you customers.
+                  We design digital experiences that engage audiences, generate leads, and grow your business.
                 </h1>
                 <p className="max-w-2xl text-xl sm:text-2xl text-amber-200 leading-relaxed font-light tracking-wide">
                   Is your website costing you customers? We fix that. We build fast, sharp, high-performing websites that leave a lasting impression and turn visitors into paying clients.
