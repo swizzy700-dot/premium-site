@@ -41,6 +41,8 @@
     "typescript": "^5"
   },
   "overrides": {
-    "ioredis": "5.11.0"
+    "bullmq": {
+      "ioredis": "^5.11.0"
+    }
   }
 }
