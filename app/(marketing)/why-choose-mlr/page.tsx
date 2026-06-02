@@ -18,7 +18,7 @@ export default function WhyChooseMLR() {
               Why Choose MLR
             </h1>
             <p className="text-xl text-neutral-300 font-light leading-relaxed">
-              Experience the difference in how Mainline Randy builds digital systems - designed with precision, driven by strategy, and refined for lasting impact.
+              Experience the difference in how Mainline (MLR) builds digital systems - designed with precision, driven by strategy, and refined for lasting impact.
             </p>
           </div>
         </div>

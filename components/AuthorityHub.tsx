@@ -27,7 +27,7 @@ export default function AuthorityHub() {
         {/* Brand Intro */}
         <div className="mb-20 text-center">
           <h2 className="text-6xl sm:text-7xl font-serif font-light leading-[1.05] tracking-tight mb-6">
-            Mainline Randy (MLR)
+            Mainline (MLR)
           </h2>
           <p className="text-xl sm:text-2xl text-amber-500 font-light tracking-wide mb-8">
             Premium digital solutions company dedicated to crafting sophisticated, high-performance websites for businesses that value excellence, credibility, and growth.
@@ -129,7 +129,7 @@ At MLR, we do not simply build websites we create digital assets that enhance re
           </h3>
           <div className="max-w-4xl mx-auto text-center">
             <p className="text-xl text-neutral-300 font-light leading-relaxed mb-6">
-              Mainline Randy (MLR) is positioned as a premium digital partner for businesses that seek more than just a website but a powerful, results-driven online presence.
+              Mainline (MLR) is positioned as a premium digital partner for businesses that seek more than just a website but a powerful, results-driven online presence.
             </p>
             <p className="text-lg text-neutral-400 font-light leading-relaxed">
               We work with ambitious brands, growing enterprises, and forward-thinking business owners who understand that investing in quality digital infrastructure is essential for long-term success.

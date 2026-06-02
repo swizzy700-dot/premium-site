@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug?: st
   const service = getServiceBySlug(slugValue);
 
   return {
-    title: service ? `${service.title} | MLR Mainline Randy` : 'Website Services | MLR Mainline Randy',
+    title: service ? `${service.title} | MLR Mainline ` : 'Website Services | MLR Mainline ',
     description: service
       ? service.description
       : 'Discover our comprehensive suite of website services designed to support modern businesses and reliable online presence.',

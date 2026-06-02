@@ -21,7 +21,7 @@ export default function TermsPage() {
               Terms & Conditions
             </h1>
             <p className="text-xl text-neutral-300 font-light leading-relaxed">
-             Mainline Randy (MLR) Professional Digital Services Agreement
+             Mainline (MLR) Professional Digital Services Agreement
             </p>
           </div>
         </div>
@@ -34,7 +34,7 @@ export default function TermsPage() {
               <div>
                 <h2 className="text-3xl font-serif font-light text-neutral-950 mb-6">1. Introduction</h2>
                 <p className="text-lg leading-relaxed font-light">
-                  These Terms and Conditions (&quot;Terms&quot;) govern the relationship between Mainline Randy (MLR) and our clients. By engaging our services, you agree to be bound by these professional standards and conditions.
+                  These Terms and Conditions (&quot;Terms&quot;) govern the relationship between Mainline (MLR) and our clients. By engaging our services, you agree to be bound by these professional standards and conditions.
                 </p>
               </div>
 
@@ -200,13 +200,13 @@ export default function TermsPage() {
               <div>
                 <h2 className="text-3xl font-serif font-light text-neutral-950 mb-6">16. Contact Information</h2>
                 <p className="text-lg leading-relaxed font-light">
-                  For any questions regarding these Terms & Conditions, clients may contact Mainline Randy (MLR) through our official communication channels. We are committed to maintaining clear, professional, and transparent communication at all times.
+                  For any questions regarding these Terms & Conditions, clients may contact Mainline (MLR) through our official communication channels. We are committed to maintaining clear, professional, and transparent communication at all times.
                 </p>
               </div>
 
               <div className="border-t border-neutral-200 pt-8 mt-12">
                 <p className="text-sm text-neutral-500 font-light">
-                  These Terms and Conditions were last updated on April 26, 2026. Mainline Randy (MLR) reserves the right to update these terms with appropriate notice to clients.
+                  These Terms and Conditions were last updated on April 26, 2026. Mainline (MLR) reserves the right to update these terms with appropriate notice to clients.
                 </p>
               </div>
             </div>

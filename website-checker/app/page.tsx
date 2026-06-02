@@ -7,7 +7,7 @@ export default function Home() {
         <Image
           className="dark:invert"
           src="/logo.png"
-          alt="Mainline Randy logo"
+          alt="Mainline MLR logo"
           width={100}
           height={20}
           priority

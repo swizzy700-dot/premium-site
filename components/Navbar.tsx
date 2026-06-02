@@ -36,14 +36,14 @@ export default function Navbar() {
           <a href="#home" className="flex items-center gap-4">
             <Image
               src="/logo.png"
-              alt="Mainline Randy Logo"
+              alt="Mainline Logo"
               width={64}
               height={48}
               className="relative h-12 w-16 object-contain"
               priority
             />
             <span className="text-xs uppercase tracking-[0.45em] text-neutral-300 font-light">
-              Mainline Randy
+              Mainline
             </span>
           </a>
 

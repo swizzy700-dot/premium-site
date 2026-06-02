@@ -24,7 +24,7 @@ export default function Marquee() {
         />
       </svg>
       <span className="text-[0.55rem] uppercase tracking-[0.55em] text-neutral-500 font-light opacity-80">
-        Mainline Randy
+        Mainline
       </span>
     </div>
   ));
