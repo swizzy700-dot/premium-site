@@ -13,7 +13,7 @@ export default function StartProject() {
     e.preventDefault();
     const subject = 'Project Request Submission';
     const body = `Name: ${name}\nEmail: ${email}\nPhone: ${phone}\n\nProject Details:\n${project}`;
-    const mailtoLink = `mailto:mainlinerandyptyltd@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const mailtoLink = `mailto:mainlinerandyptyltd@gmail.com,info@mainlinemlr.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     window.location.href = mailtoLink;
   };
   return (

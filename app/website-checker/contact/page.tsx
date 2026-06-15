@@ -40,7 +40,7 @@ export default function WebsiteCheckerContact() {
 
     const subject = `Website Checker - Consultation Request (${name.trim()})`;
     const body = `Name: ${name}\nEmail: ${email}\nWebsite: ${website}\n\nMessage:\n${message}\n`;
-    const mailto = `mailto:mainlinerandyptyltd@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
+    const mailto = `mailto:mainlinerandyptyltd@gmail.com,info@mainlinemlr.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
       body,
     )}`;
     // Open mail client; also keeps this app backend-free.

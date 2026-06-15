@@ -81,7 +81,7 @@ export default function WebsiteCheckerQuotation() {
         : "Audit highlights: (no saved audit found)",
     ].join("\n");
 
-    const mailto = `mailto:mainlinerandyptyltd@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
+    const mailto = `mailto:mainlinerandyptyltd@gmail.com,info@mainlinemlr.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
       body,
     )}`;
     setSubmitted(true);
